@@ -294,3 +294,11 @@ code {
     border-right-color: var(--border);
   }
 }
+
+.eyebrow {
+    color: var(--cyan);
+    letter-spacing: .2em;
+    font-size: 11px;
+    font-weight: 700;
+    display: block;
+}

@@ -1,8 +1,11 @@
 <script setup>
+import { useRoute } from 'vue-router';
+
+const route = useRoute();
 </script>
 
 <template>
-  <nav class="navbar cus-navbar">
+  <nav v-if="!route.meta.hideNav" class="navbar cus-navbar">
     <a href="/">
       <img src="/logo.png" alt="Logo" class="logo" width="120" height="50"/>
     </a>
@@ -13,7 +16,7 @@
       <router-link to="/about" class="nav-link nav-links" active-class="active">About</router-link>
     </div>
     <div class="d-flex align-items-center gap-3">
-      <a class="icon-link cart-button d-flex justify-content-center" href="/cart">
+      <a class="icon-link cart-button d-flex justify-content-center" href="./cart">
         <img src="/cart.svg" alt="User" class="user-icon" width="19" height="19"/>
         <!-- <span>1</span> -->
       </a>
