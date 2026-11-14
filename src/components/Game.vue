@@ -1,71 +1,3 @@
-<script setup>
-import { ref, computed, watch } from 'vue';
-import Paginate from 'vuejs-paginate-next';
-import { gamesData, toSlug } from '../assets/games.js';
-
-const genres = [
-    { label: 'All', value: '' },
-    { label: 'Action', value: 'action' },
-    { label: 'Sci-Fi', value: 'sci-fi' },
-    { label: 'Racing', value: 'racing' },
-    { label: 'Strategy', value: 'strategy' },
-    { label: 'Adventure', value: 'adventure' }
-];
-
-const platforms = [
-    { label: 'PC', value: 'pc' },
-    { label: 'PlayStation', value: 'playstation' },
-    { label: 'Xbox', value: 'xbox' },
-    { label: 'Nintendo Switch', value: 'switch' }
-];
-
-const games = ref(gamesData);
-
-const search = ref('');
-const selectedGenre = ref('');
-const selectedPlatforms = ref([]);
-const maxPrice = ref(100);
-const sortBy = ref('rating');
-const currentPage = ref(1);
-const pageSize = 6;
-
-const filteredGames = computed(() => {
-    const query = search.value.trim().toLowerCase();
-
-    return games.value
-        .filter((game) => {
-            const matchesSearch = !query || game.title.toLowerCase().includes(query);
-            const matchesGenre = !selectedGenre.value || game.genre === selectedGenre.value;
-            const matchesPlatform =
-                selectedPlatforms.value.length === 0 ||
-                selectedPlatforms.value.every((p) => game.platforms.includes(p));
-            const matchesPrice = game.price <= maxPrice.value;
-
-            return matchesSearch && matchesGenre && matchesPlatform && matchesPrice;
-        })
-        .sort((a, b) => {
-            if (sortBy.value === 'price-low') return a.price - b.price;
-            if (sortBy.value === 'date') return new Date(b.releaseDate) - new Date(a.releaseDate);
-            return b.rating - a.rating;
-        });
-});
-
-const totalPages = computed(() => Math.max(1, Math.ceil(filteredGames.value.length / pageSize)));
-
-const paginatedGames = computed(() => {
-    const start = (currentPage.value - 1) * pageSize;
-    return filteredGames.value.slice(start, start + pageSize);
-});
-
-watch([search, selectedGenre, selectedPlatforms, maxPrice, sortBy], () => {
-    currentPage.value = 1;
-});
-
-function formatPlatforms(list) {
-    return list.length === 4 ? 'All platforms' : list.map((p) => p.toUpperCase()).join(' · ');
-}
-</script>
-
 <template>
     <div class="page">
         <div class="page-heading">
@@ -113,9 +45,9 @@ function formatPlatforms(list) {
                 <label class="d-grid gap-2">
                     <span class="d-flex justify-content-between">
                         <span>Maximum Price</span>
-                        <strong class="text-white">${{ maxPrice }}</strong>
+                        <strong class="text-white">RM {{ maxPrice }}</strong>
                     </span>
-                    <input v-model.number="maxPrice" type="range" min="0" max="100" step="1" />
+                    <input v-model.number="maxPrice" type="range" min="0" max="200" step="1" />
                 </label>
             </aside>
 
@@ -129,17 +61,20 @@ function formatPlatforms(list) {
                     </select>
                 </div>
 
-                <div v-if="paginatedGames.length" class="row g-4">
+                <p v-if="loading" class="empty-state">Loading games...</p>
+                <p v-else-if="err" class="empty-state text-danger">Error: {{ err }}</p>
+
+                <div v-else-if="paginatedGames.length" class="row g-4">
                     <div
                         v-for="game in paginatedGames"
-                        :key="game.id"
+                        :key="game.game_id"
                         class="col-12 col-md-6 col-xl-4"
                     >
                         <article class="game-card h-100">
                             <router-link :to="`/game/${toSlug(game.title)}`" class="card-image">
-                                <img v-if="game.img" :src="game.img" :alt="game.title" class="w-100" />
+                                <img v-if="game.image" :src="game.image" :alt="game.title" class="w-100" />
                                 <div v-else class="img-fallback">{{ game.title[0] }}</div>
-                                <span class="card-platform">{{ formatPlatforms(game.platforms) }}</span>
+                                <span class="card-platform">{{ formatPlatforms(game.platformList) }}</span>
                             </router-link>
 
                             <button
@@ -158,7 +93,9 @@ function formatPlatforms(list) {
                                 </router-link>
                                 <div class="card-meta d-flex justify-content-between">
                                     <span class="rating">★ {{ game.rating.toFixed(1) }}</span>
-                                    <strong class="text-white">${{ game.price.toFixed(2) }}</strong>
+                                    <strong class="text-white">
+                                        {{ game.price === 0 ? 'Free' : `RM ${game.price.toFixed(2)}` }}
+                                    </strong>
                                 </div>
                             </div>
                         </article>
@@ -173,6 +110,7 @@ function formatPlatforms(list) {
                         :page-count="totalPages"
                         :page-range="5"
                         :margin-pages="1"
+                        :click-handler="clickCallback"
                         prev-text="Prev"
                         next-text="Next"
                         container-class="pagination"
@@ -189,6 +127,167 @@ function formatPlatforms(list) {
         </div>
     </div>
 </template>
+
+<script>
+import Paginate from 'vuejs-paginate-next';
+
+export default {
+    name: 'GameView',
+    components: {
+        Paginate
+    },
+    data() {
+        return {
+            genres: [
+                { label: 'All', value: '' },
+                { label: 'Action', value: 'action' },
+                { label: 'Sci-Fi', value: 'sci-fi' },
+                { label: 'Racing', value: 'racing' },
+                { label: 'Sports', value: 'sports' },
+                { label: 'Strategy', value: 'strategy' },
+                { label: 'Adventure', value: 'adventure' }
+            ],
+            platforms: [
+                { label: 'PC', value: 'pc' },
+                { label: 'PlayStation', value: 'playstation' },
+                { label: 'Xbox', value: 'xbox' },
+                { label: 'Nintendo Switch', value: 'switch' }
+            ],
+            games: [],
+            loading: false,
+            err: '',
+            search: '',
+            selectedGenre: '',
+            selectedPlatforms: [],
+            maxPrice: 200,
+            sortBy: 'rating',
+            currentPage: 1,
+            pageSize: 6
+        };
+    },
+    mounted() {
+        this.readData();
+    },
+    computed: {
+        filteredGames() {
+            const query = this.search.trim().toLowerCase();
+
+            return this.games
+                .filter((game) => {
+                    const matchesSearch = !query || game.title.toLowerCase().includes(query);
+                    const matchesGenre = !this.selectedGenre || game.genre.toLowerCase() === this.selectedGenre;
+                    const matchesPlatform =
+                        this.selectedPlatforms.length === 0 ||
+                        this.selectedPlatforms.every((p) => game.platformKeys.includes(p));
+                    const matchesPrice = game.price <= this.maxPrice;
+
+                    return matchesSearch && matchesGenre && matchesPlatform && matchesPrice;
+                })
+                .sort((a, b) => {
+                    if (this.sortBy === 'price-low') return a.price - b.price;
+                    if (this.sortBy === 'date') return new Date(b.release_date) - new Date(a.release_date);
+                    return b.rating - a.rating;
+                });
+        },
+        totalPages() {
+            return Math.max(1, Math.ceil(this.filteredGames.length / this.pageSize));
+        },
+        paginatedGames() {
+            const start = (this.currentPage - 1) * this.pageSize;
+            return this.filteredGames.slice(start, start + this.pageSize);
+        }
+    },
+    watch: {
+        search() {
+            this.currentPage = 1;
+        },
+        selectedGenre() {
+            this.currentPage = 1;
+        },
+        selectedPlatforms: {
+            handler() {
+                this.currentPage = 1;
+            },
+            deep: true
+        },
+        maxPrice() {
+            this.currentPage = 1;
+        },
+        sortBy() {
+            this.currentPage = 1;
+        }
+    },
+    methods: {
+        toSlug(title) {
+            return String(title)
+                .toLowerCase()
+                .trim()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-|-$/g, '');
+        },
+        parsePlatforms(raw) {
+            if (!raw) return [];
+            return String(raw)
+                .split(',')
+                .map((p) => p.trim())
+                .filter(Boolean);
+        },
+        toPlatformKey(label) {
+            const lower = label.toLowerCase();
+            if (lower.includes('switch')) return 'switch';
+            if (lower.includes('playstation') || lower === 'ps5' || lower === 'ps4') return 'playstation';
+            if (lower.includes('xbox')) return 'xbox';
+            if (lower.includes('pc')) return 'pc';
+            return lower;
+        },
+        readData() {
+            this.loading = true;
+            this.err = '';
+
+            fetch(`/resources/apis.php/`)
+                .then((response) => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then((data) => {
+                    this.games = data.map((row) => {
+                        const platformList = this.parsePlatforms(row.platform);
+                        return {
+                            game_id: row.game_id,
+                            title: row.title,
+                            genre: row.genre,
+                            platform: row.platform,
+                            platformList,
+                            platformKeys: platformList.map((p) => this.toPlatformKey(p)),
+                            developer: row.developer,
+                            release_date: row.release_date,
+                            description: row.description,
+                            image: row.image || '',
+                            url: row.url,
+                            price: Number(row.price) || 0,
+                            rating: Number(row.rating) || 0,
+                            liked: false
+                        };
+                    });
+                })
+                .catch((error) => {
+                    this.err = error.message;
+                })
+                .finally(() => {
+                    this.loading = false;
+                });
+        },
+        formatPlatforms(list) {
+            return list.length >= 4 ? 'All platforms' : list.join(' · ');
+        },
+        clickCallback(pageNum) {
+            this.currentPage = Number(pageNum);
+        }
+    }
+};
+</script>
 
 <style scoped>
 .page {
