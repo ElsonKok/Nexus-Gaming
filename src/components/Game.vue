@@ -143,7 +143,7 @@ function formatPlatforms(list) {
                         class="col-12 col-md-6 col-xl-4"
                     >
                         <article class="game-card h-100">
-                            <a href="#" class="card-image">
+                            <a href="./gamedetail" class="card-image">
                                 <img v-if="game.img" :src="game.img" :alt="game.title" class="w-100" />
                                 <div v-else class="img-fallback">{{ game.title[0] }}</div>
                                 <span class="card-platform">{{ formatPlatforms(game.platforms) }}</span>
