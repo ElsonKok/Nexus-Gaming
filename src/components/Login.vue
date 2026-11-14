@@ -43,9 +43,9 @@ function handleSubmit() {
                 <div class="auth-card position-relative w-100">
                     <router-link class="auth-close text-decoration-none" to="/">×</router-link>
 
-                    <span class="eyebrow">{{ mode === 'login' ? 'WELCOME BACK' : 'NEW PLAYER' }}</span>
-                    <h2>{{ mode === 'login' ? 'Login to Nexus' : 'Create Account' }}</h2>
-                    <p>{{ mode === 'login' ? 'Enter your credentials to continue your journey.' : 'Join 2.4M players across curated worlds.' }}</p>
+                    <span class="eyebrow">{{ mode === 'login' ? 'WELCOME BACK' : 'JOIN THE NETWORK' }}</span>
+                    <h2>{{ mode === 'login' ? 'Login to Nexus' : 'Create your player ID' }}</h2>
+                    <p>{{ mode === 'login' ? 'Enter your credentials to continue your journey.' : 'Build your collection and never lose your signal.' }}</p>
 
                     <div class="auth-tab row g-0">
                         <button
@@ -68,8 +68,8 @@ function handleSubmit() {
 
                     <form @submit.prevent="handleSubmit">
                         <label v-if="mode === 'register'" class="d-grid gap-2 mb-3">
-                            Player Tag
-                            <input v-model="username" type="text" placeholder="CyberNomad" required />
+                            Display name
+                            <input v-model="username" type="text" placeholder="How players will see you" required />
                         </label>
 
                         <label class="d-grid gap-2 mb-3">
@@ -94,6 +94,23 @@ function handleSubmit() {
                             </div>
                         </label>
 
+                        <label class="d-grid gap-2 mb-3">
+                            Confirm Password
+                            <div class="password-field d-flex align-items-center">
+                                <img src="/lock.svg" alt="" width="17" height="17" />
+                                <input
+                                    v-model="password"
+                                    :type="showPassword ? 'text' : 'password'"
+                                    placeholder="At least 6 characters"
+                                    minlength="6"
+                                    required
+                                />
+                                <button type="button" @click="showPassword = !showPassword">
+                                    <img src="/eye.svg" alt="Toggle password" width="15" height="15" />
+                                </button>
+                            </div>
+                        </label>
+
                         <div v-if="mode === 'login'" class="auth-options d-flex justify-content-between align-items-center mb-4">
                             <label class="d-flex align-items-center gap-2 m-0">
                                 <input v-model="remember" type="checkbox" />
@@ -103,7 +120,7 @@ function handleSubmit() {
                         </div>
 
                         <button type="submit" class="btn btn-primary w-100">
-                            {{ mode === 'login' ? 'Enter the Nexus' : 'Create Player ID' }}
+                            {{ mode === 'login' ? 'Enter the Nexus' : 'Create Account' }}
                         </button>
                     </form>
 
