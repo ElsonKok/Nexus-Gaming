@@ -94,7 +94,7 @@ function handleSubmit() {
                             </div>
                         </label>
 
-                        <label class="d-grid gap-2 mb-3">
+                        <label v-if="mode === 'register'" class="d-grid gap-2 mb-3">
                             Confirm Password
                             <div class="password-field d-flex align-items-center">
                                 <img src="/lock.svg" alt="" width="17" height="17" />
