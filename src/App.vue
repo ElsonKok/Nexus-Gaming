@@ -21,7 +21,7 @@ const route = useRoute();
         <!-- <span>1</span> -->
       </a>
       <router-link to="/login" class="text-decoration-none text-white login">Login</router-link>
-      <router-link to="/register" class="text-decoration-none register">Register</router-link>
+      <router-link :to="{ path: '/login', query: { tab: 'register' } }" class="text-decoration-none register">Register</router-link>
     </div>
   </nav>
   <router-view></router-view>

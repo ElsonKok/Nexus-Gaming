@@ -1,10 +1,19 @@
 <script setup>
-import { ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, watch } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 
 const router = useRouter();
+const route = useRoute();
 
-const mode = ref('login');
+const mode = ref(route.query.tab === 'register' ? 'register' : 'login');
+
+watch(
+    () => route.query.tab,
+    (tab) => {
+        mode.value = tab === 'register' ? 'register' : 'login';
+    }
+);
+
 const showPassword = ref(false);
 const username = ref('');
 const email = ref('');
