@@ -140,12 +140,14 @@ export default {
         return {
             genres: [
                 { label: 'All', value: '' },
-                { label: 'Action', value: 'action' },
-                { label: 'Sci-Fi', value: 'sci-fi' },
-                { label: 'Racing', value: 'racing' },
+                { label: 'Battle Royale', value: 'battle-royale' },
                 { label: 'Sports', value: 'sports' },
+                { label: 'Shooter', value: 'shooter' },
+                { label: 'Action RPG', value: 'action-rpg' },
+                { label: 'MMORPG', value: 'mmorpg' },
+                { label: 'Adventure', value: 'adventure' },
+                { label: 'Racing', value: 'racing' },
                 { label: 'Strategy', value: 'strategy' },
-                { label: 'Adventure', value: 'adventure' }
             ],
             platforms: [
                 { label: 'PC', value: 'pc' },
