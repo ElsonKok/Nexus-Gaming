@@ -332,3 +332,8 @@ code {
     margin: 10px 0;
     font-size: clamp(42px, 6vw, 78px);
 }
+
+.page-heading p {
+    color: var(--muted);
+    font-size: 17px;
+}
