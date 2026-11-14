@@ -73,7 +73,6 @@ async function submitOrder() {
         <div class="row g-4 align-items-start">
             <div class="col-lg-8">
                 <div class="accordion">
-                    <!-- Step 1: Contact & Billing -->
                     <section :class="{ open: activeStep === 1 }">
                         <button type="button" @click="activeStep = 1">
                             <span>1</span>
