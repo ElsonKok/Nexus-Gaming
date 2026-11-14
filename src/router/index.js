@@ -7,6 +7,7 @@ import Login from '../components/Login.vue'
 import Register from '../components/Register.vue'
 import Cart from '../components/Cart.vue'
 import Checkout from '../components/Checkout.vue'
+import GameDetail from '../components/GameDetail.vue'
 
 
 const routes = [
@@ -18,7 +19,7 @@ const routes = [
     {path: '/register', component: Register, meta: { hideNav: true } },
     {path: '/cart', component: Cart },
     {path: '/checkout', component: Checkout },
-
+    {path: '/gamedetail', component: GameDetail },  
 ]
 
 const router = createRouter({
