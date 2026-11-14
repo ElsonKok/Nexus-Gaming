@@ -71,11 +71,11 @@
                         class="col-12 col-md-6 col-xl-4"
                     >
                         <article class="game-card h-100">
-                            <router-link :to="`/game/${toSlug(game.title)}`" class="card-image">
+                            <a href="#" class="card-image" @click.prevent="selectGame(game)">
                                 <img v-if="game.image" :src="game.image" :alt="game.title" class="w-100" />
                                 <div v-else class="img-fallback">{{ game.title[0] }}</div>
                                 <span class="card-platform">{{ formatPlatforms(game.platformList) }}</span>
-                            </router-link>
+                            </a>
 
                             <button
                                 type="button"
@@ -88,9 +88,9 @@
 
                             <div class="card-body">
                                 <span>{{ game.genre }}</span>
-                                <router-link :to="`/game/${toSlug(game.title)}`">
+                                <a href="#" @click.prevent="selectGame(game)">
                                     <h3>{{ game.title }}</h3>
-                                </router-link>
+                                </a>
                                 <div class="card-meta d-flex justify-content-between">
                                     <span class="rating">★ {{ game.rating.toFixed(1) }}</span>
                                     <strong class="text-white">
@@ -147,7 +147,7 @@ export default {
                 { label: 'MMORPG', value: 'mmorpg' },
                 { label: 'Adventure', value: 'adventure' },
                 { label: 'Racing', value: 'racing' },
-                { label: 'Strategy', value: 'strategy' },
+                { label: 'Strategy', value: 'strategy' }
             ],
             platforms: [
                 { label: 'PC', value: 'pc' },
@@ -177,7 +177,9 @@ export default {
             return this.games
                 .filter((game) => {
                     const matchesSearch = !query || game.title.toLowerCase().includes(query);
-                    const matchesGenre = !this.selectedGenre || game.genre.toLowerCase() === this.selectedGenre;
+                    const matchesGenre =
+                        !this.selectedGenre ||
+                        this.toSlug(game.genre) === this.selectedGenre;
                     const matchesPlatform =
                         this.selectedPlatforms.length === 0 ||
                         this.selectedPlatforms.every((p) => game.platformKeys.includes(p));
@@ -241,6 +243,10 @@ export default {
             if (lower.includes('xbox')) return 'xbox';
             if (lower.includes('pc')) return 'pc';
             return lower;
+        },
+        selectGame(game) {
+            sessionStorage.setItem('selectedGame', JSON.stringify(game));
+            this.$router.push(`/game/${this.toSlug(game.title)}`);
         },
         readData() {
             this.loading = true;

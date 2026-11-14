@@ -1,112 +1,3 @@
-<script setup>
-import { ref, watch } from 'vue';
-import { useRouter, useRoute } from 'vue-router';
-import { saveUser } from '../api/auth';
-
-const router = useRouter();
-const route = useRoute();
-const role = ref('user');
-
-const mode = ref(
-    route.query.tab === 'register' ? 'register' : 'login'
-);
-
-watch(
-    () => route.query.tab,
-    (tab) => {
-        mode.value = tab === 'register' ? 'register' : 'login';
-    }
-);
-
-const showPassword = ref(false);
-
-const username = ref('');
-const email = ref('');
-const password = ref('');
-const confirmPassword = ref('');
-const remember = ref(false);
-
-const errorMessage = ref('');
-
-function handleSubmit() {
-
-    errorMessage.value = '';
-
-    // Get existing registered accounts
-    const users = JSON.parse(
-        localStorage.getItem('nexusUsers') || '[]'
-    );
-
-    // REGISTRATION
-    if (mode.value === 'register') {
-
-        if (password.value !== confirmPassword.value) {
-            errorMessage.value = 'Passwords do not match.';
-            return;
-        }
-
-        // Check duplicate email
-        const existingUser = users.find(
-            user => user.email === email.value
-        );
-
-        if (existingUser) {
-            errorMessage.value = 'This email is already registered.';
-            return;
-        }
-
-        const newUser = {
-            id: Date.now(),
-            username: username.value,
-            email: email.value,
-            password: password.value,
-            role: role.value,
-            joinedDate: new Date().toISOString().slice(0, 10),
-            purchasedGameIds: [],
-            creatorGameIds: []
-        };
-
-        // Save registered account
-        users.push(newUser);
-
-        localStorage.setItem(
-            'nexusUsers',
-            JSON.stringify(users)
-        );
-
-        // Automatically log in after registration
-        const { password: savedPassword, ...userSession } = newUser;
-
-        saveUser(userSession);
-
-        router.push('/profile');
-
-    }
-
-    // LOGIN
-    else {
-
-        const matchedUser = users.find(
-            user =>
-                user.email === email.value &&
-                user.password === password.value
-        );
-
-        if (!matchedUser) {
-            errorMessage.value = 'Invalid email or password.';
-            return;
-        }
-
-        // Save login session without password
-        const { password: savedPassword, ...userSession } = matchedUser;
-
-        saveUser(userSession);
-
-        router.push('/profile');
-    }
-}
-</script>
-
 <template>
     <div class="auth-page container-fluid p-0">
         <div class="row g-0 min-vh-100">
@@ -259,19 +150,6 @@ function handleSubmit() {
                         </button>
                     </form>
 
-                    <div class="auth-divider d-flex align-items-center gap-3 my-4">
-                        <span>or continue with</span>
-                    </div>
-
-                    <div class="row g-2">
-                        <div class="col-6">
-                            <button type="button" class="btn btn-secondary w-100">G &nbsp;Google</button>
-                        </div>
-                        <div class="col-6">
-                            <button type="button" class="btn btn-secondary w-100">◈ &nbsp;Discord</button>
-                        </div>
-                    </div>
-
                     <p class="auth-legal text-center mx-auto mt-4 mb-0">
                         By continuing, you agree to the Nexus Terms and Privacy Policy. This prototype stores the session only in this browser.
                     </p>
@@ -280,6 +158,100 @@ function handleSubmit() {
         </div>
     </div>
 </template>
+
+<script>
+import { saveUser } from '../api/auth';
+
+export default {
+    name: 'AuthView',
+    data() {
+        return {
+            role: 'user',
+            mode: this.$route.query.tab === 'register' ? 'register' : 'login',
+            showPassword: false,
+            username: '',
+            email: '',
+            password: '',
+            confirmPassword: '',
+            remember: false,
+            errorMessage: ''
+        };
+    },
+    watch: {
+        '$route.query.tab'(tab) {
+            this.mode = tab === 'register' ? 'register' : 'login';
+        }
+    },
+    methods: {
+        handleSubmit() {
+            this.errorMessage = '';
+
+            // Get existing registered accounts
+            const users = JSON.parse(
+                localStorage.getItem('nexusUsers') || '[]'
+            );
+
+            // REGISTRATION
+            if (this.mode === 'register') {
+                if (this.password !== this.confirmPassword) {
+                    this.errorMessage = 'Passwords do not match.';
+                    return;
+                }
+
+                // Check duplicate email
+                const existingUser = users.find(
+                    (user) => user.email === this.email
+                );
+
+                if (existingUser) {
+                    this.errorMessage = 'This email is already registered.';
+                    return;
+                }
+
+                const newUser = {
+                    id: Date.now(),
+                    username: this.username,
+                    email: this.email,
+                    password: this.password,
+                    role: this.role,
+                    joinedDate: new Date().toISOString().slice(0, 10),
+                    purchasedGameIds: [],
+                    creatorGameIds: []
+                };
+
+                // Save registered account
+                users.push(newUser);
+                localStorage.setItem('nexusUsers', JSON.stringify(users));
+
+                // Automatically log in after registration
+                const { password: savedPassword, ...userSession } = newUser;
+                saveUser(userSession);
+
+                this.$router.push('/profile');
+            }
+            // LOGIN
+            else {
+                const matchedUser = users.find(
+                    (user) =>
+                        user.email === this.email &&
+                        user.password === this.password
+                );
+
+                if (!matchedUser) {
+                    this.errorMessage = 'Invalid email or password.';
+                    return;
+                }
+
+                // Save login session without password
+                const { password: savedPassword, ...userSession } = matchedUser;
+                saveUser(userSession);
+
+                this.$router.push('/profile');
+            }
+        }
+    }
+};
+</script>
 
 <style scoped>
 .auth-page {

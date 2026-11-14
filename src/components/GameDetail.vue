@@ -1,212 +1,306 @@
-<script setup>
-import { ref, computed } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
-import { gamesData, toSlug } from '../assets/games.js';
-
-const router = useRouter();
-const route = useRoute();
-
-const mode = ref('creator')
-
-const platformNames = {
-    pc: 'PC',
-    playstation: 'PlayStation',
-    xbox: 'Xbox',
-    switch: 'Nintendo Switch'
-};
-
-const game = computed(() => {
-    const found = gamesData.find((g) => toSlug(g.title) === route.params.slug) || gamesData[0];
-
-    return {
-        ...found,
-        platformsText: found.platforms.map((p) => platformNames[p] || p).join(' · '),
-        screenshots: [
-            { id: 1, label: 'Midtown Sector 7', img: '' },
-            { id: 2, label: 'Chrono-Market', img: '' },
-            { id: 3, label: 'The Spire Roof', img: '' }
-        ],
-        specs: [
-            { label: 'OS', value: 'Windows 11 64-bit' },
-            { label: 'Processor', value: 'Intel Core i7-12700K / Ryzen 7 5800X' },
-            { label: 'Memory', value: '16 GB RAM' },
-            { label: 'Graphics', value: 'NVIDIA RTX 3070 / RX 6800' }
-        ]
-    };
-});
-
-const activeShot = ref(0);
-const isFavorited = ref(false);
-const addedToCart = ref(false);
-
-const reviews = ref([
-    {
-        id: 1,
-        initials: 'RW',
-        author: 'RivenArc',
-        text: 'Every system feeds the fantasy. The city feels alive, the combat is precise, and I’m still finding new routes through old missions.'
-    }
-]);
-
-const newReview = ref('');
-
-function addToCart() {
-    addedToCart.value = true;
-    setTimeout(() => router.push('/cart'), 400);
-}
-
-function submitReview() {
-    const text = newReview.value.trim();
-    if (!text) return;
-
-    reviews.value.unshift({
-        id: Date.now(),
-        initials: 'PX',
-        author: 'PlayerOne',
-        text
-    });
-    newReview.value = '';
-}
-</script>
-
 <template>
-    <header
-        class="detail-hero d-flex flex-column justify-content-between"
-        :style="game.heroImg ? { backgroundImage: `linear-gradient(to top, #05060a 12%, rgba(5,6,10,0.35)), url(${game.heroImg})` } : {}"
-    >
-        <div>
-            <router-link to="/game" class="back text-decoration-none">← Back to library</router-link>
-        </div>
+    <div v-if="loading" class="text-center py-5 text-white">Loading game details...</div>
+    <div v-else-if="err" class="text-center py-5 text-danger">{{ err }}</div>
 
-        <div class="detail-title">
-            <span class="badge">{{ game.genre }}</span>
-            <h1>{{ game.title }}</h1>
-            <div class="d-flex flex-wrap gap-3">
-                <span class="rating">★ {{ game.rating }}</span>
-                <span>{{ game.year }}</span>
-                <span>{{ game.platformsText }}</span>
+    <template v-else-if="game">
+        <header
+            class="detail-hero d-flex flex-column justify-content-between"
+            :style="game.image ? { backgroundImage: `linear-gradient(to top, #05060a 12%, rgba(5,6,10,0.35)), url(${game.image})` } : {}"
+        >
+            <div>
+                <router-link to="/game" class="back text-decoration-none">← Back to library</router-link>
             </div>
-        </div>
-    </header>
 
-    <main class="detail-layout m-auto">
-        <div class="row g-5">
-            <div class="col-lg-8">
-                <!-- Screenshot Gallery -->
-                <div class="gallery mb-4">
-                    <div class="gallery-main">
-                        <img
-                            v-if="game.screenshots[activeShot].img"
-                            :src="game.screenshots[activeShot].img"
-                            :alt="game.screenshots[activeShot].label"
-                        />
-                        <div v-else class="shot-placeholder">
-                            <span>PREVIEW 0{{ activeShot + 1 }} — {{ game.screenshots[activeShot].label }}</span>
-                        </div>
-                    </div>
-
-                    <div class="row g-2 mt-2">
-                        <div v-for="(shot, i) in game.screenshots" :key="shot.id" class="col-4">
-                            <button
-                                type="button"
-                                class="thumb-btn w-100"
-                                :class="{ active: activeShot === i }"
-                                @click="activeShot = i"
-                            >
-                                0{{ i + 1 }} · {{ shot.label }}
-                            </button>
-                        </div>
-                    </div>
+            <div class="detail-title">
+                <span class="badge">{{ game.genre }}</span>
+                <h1>{{ game.title }}</h1>
+                <div class="d-flex flex-wrap gap-3">
+                    <span class="rating">★ {{ game.rating.toFixed(1) }}</span>
+                    <span>{{ releaseYear }}</span>
+                    <span>{{ platformsText }}</span>
                 </div>
+            </div>
+        </header>
 
-                <!-- About -->
-                <section class="prose">
-                    <span class="eyebrow">ABOUT THIS GAME</span>
-                    <h2>Your choices outlive you.</h2>
-                    <p>
-                        Cross the electric divide in a city where every memory is currency. Build your crew, bend time, and decide who controls tomorrow. Explore a meticulously built world filled with meaningful encounters, layered systems, and stories that react to every decision.
-                    </p>
-                    <p class="mb-0">
-                        Go alone or connect with your crew to uncover hidden districts and evolve your play style.
-                    </p>
-                </section>
-
-                <!-- System Requirements -->
-                <section class="mb-5">
-                    <h2 class="section-heading">System Requirements</h2>
-                    <div class="specs row g-0">
-                        <div v-for="spec in game.specs" :key="spec.label" class="col-sm-6 spec-cell">
-                            <span>{{ spec.label }}</span>
-                            <strong>{{ spec.value }}</strong>
-                        </div>
-                    </div>
-                </section>
-
-                <!-- Player Reviews -->
-                <section class="reviews">
-                    <h2 class="section-heading">Player Signal</h2>
-
-                    <form class="review-form d-flex gap-2 mb-4" @submit.prevent="submitReview">
-                        <input
-                            v-model="newReview"
-                            type="text"
-                            placeholder="Share your signal on this world..."
-                            required
-                        />
-                        <button type="submit" class="btn btn-primary">Post</button>
-                    </form>
-
-                    <div class="d-grid gap-3">
-                        <article v-for="review in reviews" :key="review.id">
-                            <div class="review-head d-flex align-items-center gap-3 mb-3">
-                                <div class="avatar">{{ review.initials }}</div>
-                                <strong>{{ review.author }}</strong>
+        <main class="detail-layout m-auto">
+            <div class="row g-5">
+                <div class="col-lg-8">
+                    <!-- Screenshot Gallery -->
+                    <div class="gallery mb-4">
+                        <div class="gallery-main">
+                            <img
+                                v-if="screenshots[activeShot].img"
+                                :src="screenshots[activeShot].img"
+                                :alt="screenshots[activeShot].label"
+                            />
+                            <div v-else class="shot-placeholder">
+                                <span>PREVIEW 0{{ activeShot + 1 }} — {{ screenshots[activeShot].label }}</span>
                             </div>
-                            <p class="mb-0">{{ review.text }}</p>
-                        </article>
-                    </div>
-                </section>
-            </div>
+                        </div>
 
-            <!-- Sidebar Buy Card -->
-            <aside class="col-lg-4">
-                <div class="buy-card">
-                    <div class="price">
-                        <strong>RM {{ game.price.toFixed(2) }}</strong>
-                    </div>
-
-                    <button type="button" class="btn btn-primary w-100" @click="addToCart">
-                        <img src="/cart.svg" alt="" width="18" height="18" />
-                        {{ addedToCart ? 'Added to Cart' : 'Add to Cart' }}
-                    </button>
-
-                    <button
-                        type="button"
-                        class="btn btn-secondary w-100"
-                        :class="{ favorited: isFavorited }"
-                        @click="isFavorited = !isFavorited"
-                    >
-                        <span>{{ isFavorited ? '♥' : '♡' }}</span>
-                        {{ isFavorited ? 'Saved in Favorites' : 'Add to Favourite' }}
-                    </button>
-
-                    <div class="buy-info">
-                        <span>● Instant digital key delivery</span>
-                        <span>● Secure checkout</span>
+                        <div class="row g-2 mt-2">
+                            <div v-for="(shot, i) in screenshots" :key="shot.id" class="col-4">
+                                <button
+                                    type="button"
+                                    class="thumb-btn w-100"
+                                    :class="{ active: activeShot === i }"
+                                    @click="activeShot = i"
+                                >
+                                    0{{ i + 1 }} · {{ shot.label }}
+                                </button>
+                            </div>
+                        </div>
                     </div>
 
-                    <div v-if="mode === 'creator'">
-                        <hr class="my-1" />
-                        <span class="badge badge-violet align-self-start w-100">CREATOR ACCESS</span>
-                        <router-link to="/game/edit" class="btn btn-ghost w-100 text-decoration-none mt-2">
-                            Edit Game
-                        </router-link>
-                    </div>
+                    <!-- About -->
+                    <section class="prose">
+                        <span class="eyebrow">ABOUT THIS GAME</span>
+                        <h2>{{ game.title }}</h2>
+                        <p class="mb-0">
+                            {{ game.description }}
+                        </p>
+                    </section>
+
+                    <!-- System Requirements -->
+                    <section class="mb-5">
+                        <h2 class="section-heading">System Requirements (Mininum)</h2>
+                        <div class="specs row g-0">
+                            <div v-for="spec in specs" :key="spec.label" class="col-sm-6 spec-cell">
+                                <span>{{ spec.label }}</span>
+                                <strong>{{ spec.value }}</strong>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Player Reviews -->
+                    <section class="reviews">
+                        <h2 class="section-heading">Player Signal</h2>
+
+                        <form class="review-form d-flex gap-2 mb-4" @submit.prevent="submitReview">
+                            <input
+                                v-model="newReview"
+                                type="text"
+                                placeholder="Share your signal on this world..."
+                                required
+                            />
+                            <button type="submit" class="btn btn-primary">Post</button>
+                        </form>
+
+                        <div class="d-grid gap-3">
+                            <article v-for="review in reviews" :key="review.id">
+                                <div class="review-head d-flex align-items-center gap-3 mb-3">
+                                    <div class="avatar">{{ review.initials }}</div>
+                                    <strong>{{ review.author }}</strong>
+                                </div>
+                                <p class="mb-0">{{ review.text }}</p>
+                            </article>
+                        </div>
+                    </section>
                 </div>
-            </aside>
-        </div>
-    </main>
+
+                <!-- Sidebar Buy Card -->
+                <aside class="col-lg-4">
+                    <div class="buy-card">
+                        <div class="price">
+                            <strong>{{ game.price === 0 ? 'Free' : `RM ${game.price.toFixed(2)}` }}</strong>
+                        </div>
+
+                        <button type="button" class="btn btn-primary w-100" @click="addToCart">
+                            <img src="/cart.svg" alt="" width="18" height="18" />
+                            {{ addedToCart ? 'Added to Cart' : 'Add to Cart' }}
+                        </button>
+
+                        <button
+                            type="button"
+                            class="btn btn-secondary w-100"
+                            :class="{ favorited: isFavorited }"
+                            @click="isFavorited = !isFavorited"
+                        >
+                            <span>{{ isFavorited ? '♥' : '♡' }}</span>
+                            {{ isFavorited ? 'Saved in Favorites' : 'Add to Favourite' }}
+                        </button>
+
+                        <a
+                            v-if="game.url"
+                            :href="game.url"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="btn btn-ghost w-100 text-decoration-none"
+                        >
+                            Official Website ↗
+                        </a>
+
+                        <div class="buy-info">
+                            <span>● Developer: {{ game.developer }}</span>
+                            <span>● Release Date: {{ game.release_date }}</span>
+                            <span>● Instant digital key delivery</span>
+                        </div>
+
+                        <div v-if="mode === 'creator'">
+                            <hr class="my-1" />
+                            <span class="badge badge-violet align-self-start w-100">CREATOR ACCESS</span>
+                            <router-link to="/game/edit" class="btn btn-ghost w-100 text-decoration-none mt-2">
+                                Edit Game
+                            </router-link>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+        </main>
+    </template>
 </template>
+
+<script>
+export default {
+    name: 'GameDetail',
+    data() {
+        return {
+            mode: 'creator',
+            game: null,
+            loading: false,
+            err: '',
+            activeShot: 0,
+            isFavorited: false,
+            addedToCart: false,
+            specs: [
+                { label: 'OS', value: 'Windows 10/11 64-bit' },
+                { label: 'Processor', value: 'Intel Core i7-12700K / Ryzen 7 5800X' },
+                { label: 'Memory', value: '16 GB RAM' },
+                { label: 'Graphics', value: 'NVIDIA RTX 3070 / RX 6800' }
+            ],
+            reviews: [
+                {
+                    id: 1,
+                    initials: 'RW',
+                    author: 'RivenArc',
+                    text: 'Every system feeds the fantasy. The city feels alive, the combat is precise, and I’m still finding new routes through old missions.'
+                }
+            ],
+            newReview: ''
+        };
+    },
+    computed: {
+        platformsText() {
+            if (!this.game) return '';
+            if (Array.isArray(this.game.platformList) && this.game.platformList.length) {
+                return this.game.platformList.join(' · ');
+            }
+            return String(this.game.platform || '')
+                .split(',')
+                .map((p) => p.trim())
+                .filter(Boolean)
+                .join(' · ');
+        },
+        releaseYear() {
+            if (!this.game || !this.game.release_date) return '';
+            return String(this.game.release_date).split('-')[0];
+        },
+        screenshots() {
+            const mainImg = this.game && this.game.image ? this.game.image : '';
+            return [
+                { id: 1, label: 'Main Preview', img: mainImg },
+                { id: 2, label: 'Gameplay View', img: '' },
+                { id: 3, label: 'World Overview', img: '' }
+            ];
+        }
+    },
+    mounted() {
+        this.loadGame();
+    },
+    watch: {
+        '$route.params.slug'() {
+            this.loadGame();
+        }
+    },
+    methods: {
+        toSlug(title) {
+            return String(title)
+                .toLowerCase()
+                .trim()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-|-$/g, '');
+        },
+        normalizeRow(row) {
+            const platformList = Array.isArray(row.platformList)
+                ? row.platformList
+                : String(row.platform || '')
+                      .split(',')
+                      .map((p) => p.trim())
+                      .filter(Boolean);
+
+            return {
+                game_id: row.game_id,
+                title: row.title,
+                genre: row.genre,
+                platform: row.platform,
+                platformList,
+                developer: row.developer,
+                release_date: row.release_date,
+                description: row.description,
+                image: row.image || '',
+                url: row.url,
+                price: Number(row.price) || 0,
+                rating: Number(row.rating) || 0,
+                liked: Boolean(row.liked)
+            };
+        },
+        loadGame() {
+            this.err = '';
+            this.activeShot = 0;
+            const slug = this.$route.params.slug;
+            const saved = sessionStorage.getItem('selectedGame');
+
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (this.toSlug(parsed.title) === slug) {
+                    this.game = this.normalizeRow(parsed);
+                    this.isFavorited = this.game.liked;
+                    return;
+                }
+            }
+
+            // Fallback if opened directly or refreshed at /game/:slug
+            this.loading = true;
+            fetch(`${import.meta.env.BASE_URL}resources/apis.php/`)
+                .then((res) => {
+                    if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+                    return res.json();
+                })
+                .then((data) => {
+                    const match = data.find((row) => this.toSlug(row.title) === slug);
+                    if (match) {
+                        this.game = this.normalizeRow(match);
+                        this.isFavorited = this.game.liked;
+                    } else {
+                        this.err = 'Game not found.';
+                    }
+                })
+                .catch((error) => {
+                    this.err = error.message;
+                })
+                .finally(() => {
+                    this.loading = false;
+                });
+        },
+        addToCart() {
+            this.addedToCart = true;
+            setTimeout(() => this.$router.push('/cart'), 400);
+        },
+        submitReview() {
+            const text = this.newReview.trim();
+            if (!text) return;
+
+            this.reviews.unshift({
+                id: Date.now(),
+                initials: 'PX',
+                author: 'PlayerOne',
+                text
+            });
+            this.newReview = '';
+        }
+    }
+};
+</script>
 
 <style scoped>
 .detail-hero {
