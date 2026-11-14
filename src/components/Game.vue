@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
 import Paginate from 'vuejs-paginate-next';
+import { gamesData, toSlug } from '../assets/games.js';
 
 const genres = [
     { label: 'All', value: '' },
@@ -18,15 +19,7 @@ const platforms = [
     { label: 'Nintendo Switch', value: 'switch' }
 ];
 
-const games = ref([
-    { id: 1, title: 'Chromatic Drift', genre: 'racing', platforms: ['pc', 'playstation', 'xbox', 'switch'], rating: 4.5, price: 19.99, releaseDate: '2025-02-10', img: '', liked: false },
-    { id: 2, title: 'Aether Protocol', genre: 'sci-fi', platforms: ['pc', 'playstation'], rating: 4.9, price: 49.99, releaseDate: '2025-04-18', img: '', liked: true },
-    { id: 3, title: 'Iron Veil', genre: 'strategy', platforms: ['pc'], rating: 4.7, price: 29.99, releaseDate: '2024-11-05', img: '', liked: false },
-    { id: 4, title: 'Neon Ronin', genre: 'action', platforms: ['pc', 'playstation', 'xbox'], rating: 4.8, price: 39.99, releaseDate: '2025-01-22', img: '', liked: false },
-    { id: 5, title: 'Solstice Echo', genre: 'adventure', platforms: ['pc', 'switch'], rating: 4.6, price: 24.99, releaseDate: '2024-09-14', img: '', liked: false },
-    { id: 6, title: 'Void Runner', genre: 'sci-fi', platforms: ['pc', 'xbox'], rating: 4.4, price: 14.99, releaseDate: '2024-06-30', img: '', liked: false },
-    { id: 7, title: 'Apex Circuit', genre: 'racing', platforms: ['playstation', 'xbox'], rating: 4.3, price: 59.99, releaseDate: '2025-03-01', img: '', liked: false }
-]);
+const games = ref(gamesData);
 
 const search = ref('');
 const selectedGenre = ref('');
@@ -143,7 +136,7 @@ function formatPlatforms(list) {
                         class="col-12 col-md-6 col-xl-4"
                     >
                         <article class="game-card h-100">
-                            <router-link to="/gamedetail" class="card-image">
+                            <router-link :to="`/game/${toSlug(game.title)}`" class="card-image">
                                 <img v-if="game.img" :src="game.img" :alt="game.title" class="w-100" />
                                 <div v-else class="img-fallback">{{ game.title[0] }}</div>
                                 <span class="card-platform">{{ formatPlatforms(game.platforms) }}</span>
@@ -160,9 +153,9 @@ function formatPlatforms(list) {
 
                             <div class="card-body">
                                 <span>{{ game.genre }}</span>
-                                <a href="#">
+                                <router-link :to="`/game/${toSlug(game.title)}`">
                                     <h3>{{ game.title }}</h3>
-                                </a>
+                                </router-link>
                                 <div class="card-meta d-flex justify-content-between">
                                     <span class="rating">★ {{ game.rating.toFixed(1) }}</span>
                                     <strong class="text-white">${{ game.price.toFixed(2) }}</strong>

@@ -17,7 +17,7 @@ const routes = [
     {path: '/login', component: Login, meta: { hideNav: true } },
     {path: '/cart', component: Cart },
     {path: '/checkout', component: Checkout },
-    {path: '/gamedetail', component: GameDetail },  
+    {path: '/game/:slug', component: GameDetail },  
 ]
 
 const router = createRouter({

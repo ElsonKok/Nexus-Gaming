@@ -1,30 +1,31 @@
 <script setup>
-import { ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, computed } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { gamesData, toSlug } from '../assets/games.js';
 
 const router = useRouter();
+const route = useRoute();
 
 const mode = ref('creator')
 
-const game = ref({
-    title: 'Neon Veil',
-    genre: 'Action RPG',
-    rating: 4.9,
-    year: 2025,
-    platforms: 'PC · PS5',
-    price: 29.99,
-    heroImg: '',
-    screenshots: [
-        { id: 1, label: 'Midtown Sector 7', img: '' },
-        { id: 2, label: 'Chrono-Market', img: '' },
-        { id: 3, label: 'The Spire Roof', img: '' }
-    ],
-    specs: [
-        { label: 'OS', value: 'Windows 11 64-bit' },
-        { label: 'Processor', value: 'Intel Core i7-12700K / Ryzen 7 5800X' },
-        { label: 'Memory', value: '16 GB RAM' },
-        { label: 'Graphics', value: 'NVIDIA RTX 3070 / RX 6800' }
-    ]
+const game = computed(() => {
+    const found = gamesData.find((g) => toSlug(g.title) === route.params.slug) || gamesData[0];
+
+    return {
+        ...found,
+        platformsText: found.platforms.map((p) => p.toUpperCase()).join(' · '),
+        screenshots: [
+            { id: 1, label: 'Midtown Sector 7', img: '' },
+            { id: 2, label: 'Chrono-Market', img: '' },
+            { id: 3, label: 'The Spire Roof', img: '' }
+        ],
+        specs: [
+            { label: 'OS', value: 'Windows 11 64-bit' },
+            { label: 'Processor', value: 'Intel Core i7-12700K / Ryzen 7 5800X' },
+            { label: 'Memory', value: '16 GB RAM' },
+            { label: 'Graphics', value: 'NVIDIA RTX 3070 / RX 6800' }
+        ]
+    };
 });
 
 const activeShot = ref(0);
