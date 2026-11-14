@@ -8,12 +8,19 @@ const route = useRoute();
 
 const mode = ref('creator')
 
+const platformNames = {
+    pc: 'PC',
+    playstation: 'PlayStation',
+    xbox: 'Xbox',
+    switch: 'Nintendo Switch'
+};
+
 const game = computed(() => {
     const found = gamesData.find((g) => toSlug(g.title) === route.params.slug) || gamesData[0];
 
     return {
         ...found,
-        platformsText: found.platforms.map((p) => p.toUpperCase()).join(' · '),
+        platformsText: found.platforms.map((p) => platformNames[p] || p).join(' · '),
         screenshots: [
             { id: 1, label: 'Midtown Sector 7', img: '' },
             { id: 2, label: 'Chrono-Market', img: '' },
@@ -77,7 +84,7 @@ function submitReview() {
             <div class="d-flex flex-wrap gap-3">
                 <span class="rating">★ {{ game.rating }}</span>
                 <span>{{ game.year }}</span>
-                <span>{{ game.platforms }}</span>
+                <span>{{ game.platformsText }}</span>
             </div>
         </div>
     </header>

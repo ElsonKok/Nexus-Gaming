@@ -6,7 +6,7 @@ const route = useRoute();
 
 <template>
   <nav v-if="!route.meta.hideNav" class="navbar cus-navbar">
-    <a href="/">
+    <a href="./">
       <img src="/logo.png" alt="Logo" class="logo" width="120" height="50"/>
     </a>
     <div class="d-flex gap-3">
