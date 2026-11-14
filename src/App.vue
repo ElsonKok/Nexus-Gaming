@@ -1,3 +1,116 @@
+<script>
+export default {
+    name: 'App',
+    data() {
+        return {
+            currentUser: null,
+            cartCount: 0,
+            toast: {
+                visible: false,
+                message: '',
+                type: 'success' // 'success' | 'info' | 'error'
+            },
+            toastTimer: null
+        };
+    },
+    computed: {
+        userInitials() {
+            const name =
+                this.currentUser?.username ||
+                this.currentUser?.email ||
+                'P';
+
+            return name
+                .split(' ')
+                .map((w) => w[0])
+                .join('')
+                .slice(0, 2)
+                .toUpperCase();
+        }
+    },
+    watch: {
+        '$route.fullPath'() {
+            this.handleAuthChange();
+        }
+    },
+    mounted() {
+        this.handleAuthChange();
+        window.addEventListener('auth-changed', this.handleAuthChange);
+        window.addEventListener('storage', this.handleAuthChange);
+        window.addEventListener('cart-changed', this.fetchCartCount);
+        window.addEventListener('show-toast', this.handleToastEvent);
+    },
+    beforeUnmount() {
+        window.removeEventListener('auth-changed', this.handleAuthChange);
+        window.removeEventListener('storage', this.handleAuthChange);
+        window.removeEventListener('cart-changed', this.fetchCartCount);
+        window.removeEventListener('show-toast', this.handleToastEvent);
+        if (this.toastTimer) clearTimeout(this.toastTimer);
+    },
+    methods: {
+        syncAuth() {
+            try {
+                this.currentUser =
+                    JSON.parse(localStorage.getItem('nexusUser')) ||
+                    JSON.parse(localStorage.getItem('user'));
+            } catch {
+                this.currentUser = null;
+            }
+        },
+        fetchCartCount() {
+            const uid = this.currentUser?.user_id || this.currentUser?.id;
+            if (!uid || this.currentUser?.role === 'creator') {
+                this.cartCount = 0;
+                return;
+            }
+
+            const baseApi = `/resources/apis.php`;
+            fetch(`${baseApi}/cart/user_id/${encodeURIComponent(uid)}`)
+                .then((res) => res.json())
+                .then((data) => {
+                    this.cartCount = Array.isArray(data) ? data.length : 0;
+                })
+                .catch(() => {
+                    this.cartCount = 0;
+                });
+        },
+        handleAuthChange() {
+            this.syncAuth();
+            this.fetchCartCount();
+        },
+        handleToastEvent(event) {
+            const detail = event.detail || {};
+            const message = typeof detail === 'string' ? detail : detail.message;
+            if (!message) return;
+
+            this.showToast(message, detail.type || 'success', detail.duration || 3500);
+        },
+        showToast(message, type = 'success', duration = 3500) {
+            if (this.toastTimer) clearTimeout(this.toastTimer);
+
+            this.toast = {
+                visible: true,
+                message,
+                type
+            };
+
+            this.toastTimer = setTimeout(() => {
+                this.toast.visible = false;
+            }, duration);
+        },
+        handleLogout() {
+            localStorage.removeItem('nexusUser');
+            localStorage.removeItem('user');
+            this.currentUser = null;
+            this.cartCount = 0;
+            window.dispatchEvent(new Event('auth-changed'));
+            this.showToast('Signed out of Nexus', 'info');
+            this.$router.push('/');
+        }
+    }
+};
+</script>
+
 <template>
     <nav v-if="!$route.meta?.hideNav" class="navbar cus-navbar sticky-top">
         <!-- Brand -->
@@ -104,91 +217,21 @@
     </nav>
 
     <router-view></router-view>
+
+    <!-- Global Nexus Toast -->
+    <Transition name="nexus-toast">
+        <div
+            v-if="toast.visible"
+            class="nexus-toast"
+            :class="`toast-${toast.type}`"
+            role="status"
+            @click="toast.visible = false"
+        >
+            <span class="toast-dot"></span>
+            <span class="toast-text">{{ toast.message }}</span>
+        </div>
+    </Transition>
 </template>
-
-<script>
-export default {
-    name: 'App',
-    data() {
-        return {
-            currentUser: null,
-            cartCount: 0
-        };
-    },
-    computed: {
-        userInitials() {
-            const name =
-                this.currentUser?.username ||
-                this.currentUser?.email ||
-                'P';
-
-            return name
-                .split(' ')
-                .map((w) => w[0])
-                .join('')
-                .slice(0, 2)
-                .toUpperCase();
-        }
-    },
-    watch: {
-        '$route.fullPath'() {
-            this.handleAuthChange();
-        }
-    },
-    mounted() {
-        this.handleAuthChange();
-        window.addEventListener('auth-changed', this.handleAuthChange);
-        window.addEventListener('storage', this.handleAuthChange);
-        window.addEventListener('cart-changed', this.fetchCartCount);
-    },
-    beforeUnmount() {
-        window.removeEventListener('auth-changed', this.handleAuthChange);
-        window.removeEventListener('storage', this.handleAuthChange);
-        window.removeEventListener('cart-changed', this.fetchCartCount);
-    },
-    methods: {
-        syncAuth() {
-            try {
-                this.currentUser =
-                    JSON.parse(localStorage.getItem('nexusUser')) ||
-                    JSON.parse(localStorage.getItem('user'));
-            } catch {
-                this.currentUser = null;
-            }
-        },
-        fetchCartCount() {
-            const uid = this.currentUser?.user_id || this.currentUser?.id;
-            if (!uid || this.currentUser?.role === 'creator') {
-                this.cartCount = 0;
-                return;
-            }
-
-            fetch(
-                `/resources/apis.php/cart/user_id/${encodeURIComponent(uid)}`
-            )
-                .then((res) => res.json())
-                .then((data) => {
-                    this.cartCount = Array.isArray(data) ? data.length : 0;
-                })
-                .catch(() => {
-                    this.cartCount = 0;
-                });
-        },
-        handleAuthChange() {
-            this.syncAuth();
-            this.fetchCartCount();
-        },
-        handleLogout() {
-            localStorage.removeItem('nexusUser');
-            localStorage.removeItem('user');
-            this.currentUser = null;
-            this.cartCount = 0;
-            window.dispatchEvent(new Event('auth-changed'));
-            this.$router.push('/');
-        }
-    }
-};
-</script>
 
 <style scoped>
 .cus-navbar {
@@ -208,7 +251,6 @@ export default {
     opacity: 0.88;
 }
 
-/* Navigation Links with Cyan Underline Indicator */
 .nav-link.nav-links {
     position: relative;
     color: var(--muted);
@@ -243,7 +285,6 @@ export default {
     transform: scaleX(1);
 }
 
-/* Guest Buttons */
 .login-btn {
     color: #d5d8e0;
     font-size: 13px;
@@ -274,7 +315,6 @@ export default {
     transform: translateY(-1px);
 }
 
-/* Creator Button */
 .creator-btn {
     background: rgba(138, 108, 255, 0.14);
     border: 1px solid #a58fff;
@@ -291,7 +331,6 @@ export default {
     color: #08090d;
 }
 
-/* Cart Button */
 .icon-link {
     position: relative;
     width: 38px;
@@ -324,7 +363,6 @@ export default {
     box-shadow: 0 0 10px rgba(0, 242, 254, 0.6);
 }
 
-/* User Profile Pill */
 .profile-pill {
     display: inline-flex;
     align-items: center;
@@ -356,7 +394,6 @@ export default {
     font-weight: 800;
 }
 
-/* Logout Button */
 .logout-btn {
     background: transparent;
     border: 1px solid #252936;
@@ -370,6 +407,56 @@ export default {
 .logout-btn:hover {
     color: #ff6969;
     border-color: #ff6969;
+}
+
+/* Global Bottom-Right Toast */
+.nexus-toast {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 2000;
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    padding: 15px 22px;
+    background: #11141c;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #f4f6fb;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.65);
+    cursor: pointer;
+}
+
+.toast-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: #55f5ae;
+    box-shadow: 0 0 10px #55f5ae;
+}
+
+.toast-info .toast-dot {
+    background: var(--cyan);
+    box-shadow: 0 0 10px var(--cyan);
+}
+
+.toast-error .toast-dot {
+    background: #ff6969;
+    box-shadow: 0 0 10px #ff6969;
+}
+
+.nexus-toast-enter-active,
+.nexus-toast-leave-active {
+    transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.nexus-toast-enter-from,
+.nexus-toast-leave-to {
+    opacity: 0;
+    transform: translateY(14px);
 }
 
 @media (max-width: 860px) {
@@ -386,6 +473,12 @@ export default {
 @media (max-width: 480px) {
     .pill-name {
         display: none;
+    }
+
+    .nexus-toast {
+        right: 16px;
+        left: 16px;
+        bottom: 16px;
     }
 }
 </style>
