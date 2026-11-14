@@ -1,11 +1,15 @@
 <script setup>
 import { ref, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
+import { saveUser } from '../api/auth';
 
 const router = useRouter();
 const route = useRoute();
+const role = ref('user');
 
-const mode = ref(route.query.tab === 'register' ? 'register' : 'login');
+const mode = ref(
+    route.query.tab === 'register' ? 'register' : 'login'
+);
 
 watch(
     () => route.query.tab,
@@ -15,15 +19,91 @@ watch(
 );
 
 const showPassword = ref(false);
+
 const username = ref('');
 const email = ref('');
 const password = ref('');
+const confirmPassword = ref('');
 const remember = ref(false);
 
+const errorMessage = ref('');
+
 function handleSubmit() {
-    // Handle login or registration logic here
-    console.log(mode.value, { username: username.value, email: email.value, remember: remember.value });
-    router.push('/');
+
+    errorMessage.value = '';
+
+    // Get existing registered accounts
+    const users = JSON.parse(
+        localStorage.getItem('nexusUsers') || '[]'
+    );
+
+    // REGISTRATION
+    if (mode.value === 'register') {
+
+        if (password.value !== confirmPassword.value) {
+            errorMessage.value = 'Passwords do not match.';
+            return;
+        }
+
+        // Check duplicate email
+        const existingUser = users.find(
+            user => user.email === email.value
+        );
+
+        if (existingUser) {
+            errorMessage.value = 'This email is already registered.';
+            return;
+        }
+
+        const newUser = {
+            id: Date.now(),
+            username: username.value,
+            email: email.value,
+            password: password.value,
+            role: role.value,
+            joinedDate: new Date().toISOString().slice(0, 10),
+            purchasedGameIds: [],
+            creatorGameIds: []
+        };
+
+        // Save registered account
+        users.push(newUser);
+
+        localStorage.setItem(
+            'nexusUsers',
+            JSON.stringify(users)
+        );
+
+        // Automatically log in after registration
+        const { password: savedPassword, ...userSession } = newUser;
+
+        saveUser(userSession);
+
+        router.push('/profile');
+
+    }
+
+    // LOGIN
+    else {
+
+        const matchedUser = users.find(
+            user =>
+                user.email === email.value &&
+                user.password === password.value
+        );
+
+        if (!matchedUser) {
+            errorMessage.value = 'Invalid email or password.';
+            return;
+        }
+
+        // Save login session without password
+        const { password: savedPassword, ...userSession } = matchedUser;
+
+        saveUser(userSession);
+
+        router.push('/profile');
+    }
 }
 </script>
 
@@ -81,6 +161,49 @@ function handleSubmit() {
                             <input v-model="username" type="text" placeholder="How players will see you" required />
                         </label>
 
+                        <!-- Account Role -->
+                        <div v-if="mode === 'register'" class="mb-3">
+
+                            <label class="d-block mb-2">
+                                Select Account Type
+                            </label>
+
+                            <div class="role-options">
+
+                                <label class="role-option">
+                                    <input
+                                        v-model="role"
+                                        type="radio"
+                                        value="user"
+                                    />
+
+                                    <div>
+                                        <strong>Player</strong>
+                                        <small>Browse and purchase games.</small>
+                                    </div>
+                                </label>
+
+                                <label class="role-option">
+                                    <input
+                                        v-model="role"
+                                        type="radio"
+                                        value="creator"
+                                    />
+
+                                    <div>
+                                        <strong>Creator</strong>
+                                        <small>Publish and manage your own games.</small>
+                                    </div>
+                                </label>
+
+                            </div>
+
+                            <small class="role-note">
+                                Admin accounts require administrator approval.
+                            </small>
+
+                        </div>
+
                         <label class="d-grid gap-2 mb-3">
                             Email
                             <input v-model="email" type="email" placeholder="player@nexus.gg" required />
@@ -108,7 +231,7 @@ function handleSubmit() {
                             <div class="password-field d-flex align-items-center">
                                 <img src="/lock.svg" alt="" width="17" height="17" />
                                 <input
-                                    v-model="password"
+                                    v-model="confirmPassword"
                                     :type="showPassword ? 'text' : 'password'"
                                     placeholder="At least 6 characters"
                                     minlength="6"
@@ -128,6 +251,9 @@ function handleSubmit() {
                             <button type="button">Forgot Password?</button>
                         </div>
 
+                        <p v-if="errorMessage" class="auth-error">
+                            {{ errorMessage }}
+                        </p>
                         <button type="submit" class="btn btn-primary w-100">
                             {{ mode === 'login' ? 'Enter the Nexus' : 'Create Account' }}
                         </button>
@@ -368,6 +494,65 @@ form label {
     .auth-art {
         min-height: auto;
         padding: 36px 24px;
+    }
+}
+
+.auth-error {
+    color: #ff6969;
+    font-size: 12px;
+    margin-bottom: 15px;
+}
+
+.role-options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.role-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 15px;
+    background: #0c0e13;
+    border: 1px solid var(--line);
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.role-option:has(input:checked) {
+    border-color: var(--cyan);
+    background: #00f2fe0a;
+}
+
+.role-option input {
+    margin-top: 4px;
+    accent-color: var(--cyan);
+}
+
+.role-option strong {
+    display: block;
+    color: var(--text);
+    font-size: 12px;
+}
+
+.role-option small {
+    display: block;
+    color: var(--muted);
+    font-size: 10px;
+    margin-top: 5px;
+}
+
+.role-note {
+    display: block;
+    color: var(--muted);
+    font-size: 10px;
+    margin-top: 10px;
+}
+
+@media (max-width: 450px) {
+    .role-options {
+        grid-template-columns: 1fr;
     }
 }
 </style>

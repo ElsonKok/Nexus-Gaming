@@ -7,6 +7,10 @@ import Login from '../components/Login.vue'
 import Cart from '../components/Cart.vue'
 import Checkout from '../components/Checkout.vue'
 import GameDetail from '../components/GameDetail.vue'
+import Profile from '../components/Profile.vue'
+import EditProfile from '../components/EditProfile.vue'
+import AddGame from '../components/AddGame.vue'
+import EditGame from '../components/EditGame.vue'
 
 
 const routes = [
@@ -18,6 +22,10 @@ const routes = [
     {path: '/cart', component: Cart },
     {path: '/checkout', component: Checkout },
     {path: '/game/:slug', component: GameDetail },  
+    {path: '/profile', component: Profile},
+    {path: '/profile/edit', component: EditProfile},
+    {path: '/games/add', component: AddGame},
+    {path: '/games/edit/:id', component: EditGame},
 ]
 
 const router = createRouter({

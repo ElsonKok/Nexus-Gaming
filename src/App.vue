@@ -1,31 +1,121 @@
 <script setup>
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
+import { currentUser, logoutUser } from './api/auth';
 
 const route = useRoute();
+const router = useRouter();
+
+function handleLogout() {
+    logoutUser();
+    router.push('/');
+}
 </script>
 
 <template>
-  <nav v-if="!route.meta.hideNav" class="navbar cus-navbar">
-    <a href="./">
-      <img src="/logo.png" alt="Logo" class="logo" width="120" height="50"/>
-    </a>
-    <div class="d-flex gap-3">
-      <router-link to="/" class="nav-link nav-links" active-class="active">Home</router-link>
-      <router-link to="/game" class="nav-link nav-links" active-class="active">Game</router-link>
-      <router-link to="/favourite" class="nav-link nav-links" active-class="active">Favourite</router-link>
-      <router-link to="/about" class="nav-link nav-links" active-class="active">About</router-link>
-    </div>
-    <div class="d-flex align-items-center gap-3">
-      <a class="icon-link cart-button d-flex justify-content-center" href="./cart">
-        <img src="/cart.svg" alt="User" class="user-icon" width="19" height="19"/>
-        <!-- <span>1</span> -->
-      </a>
-      <router-link to="/login" class="text-decoration-none text-white login">Login</router-link>
-      <router-link :to="{ path: '/login', query: { tab: 'register' } }" class="text-decoration-none register">Register</router-link>
-    </div>
-  </nav>
-  <router-view></router-view>
+    <nav v-if="!route.meta.hideNav" class="navbar cus-navbar">
+
+        <router-link to="/">
+            <img
+                src="/logo.png"
+                alt="Logo"
+                class="logo"
+                width="120"
+                height="50"
+            />
+        </router-link>
+
+        <div class="d-flex gap-3">
+            <router-link to="/" class="nav-link nav-links">
+                Home
+            </router-link>
+
+            <router-link to="/game" class="nav-link nav-links">
+                Game
+            </router-link>
+
+            <router-link to="/favourite" class="nav-link nav-links">
+                Favourite
+            </router-link>
+
+            <router-link to="/about" class="nav-link nav-links">
+                About
+            </router-link>
+        </div>
+
+        <!-- Guest Navigation -->
+        <div v-if="!currentUser" class="d-flex align-items-center gap-3">
+
+            <router-link
+                to="/login"
+                class="text-decoration-none text-white login"
+            >
+                Login
+            </router-link>
+
+            <router-link
+                :to="{ path: '/login', query: { tab: 'register' } }"
+                class="text-decoration-none register"
+            >
+                Register
+            </router-link>
+
+        </div>
+
+        <!-- Logged-in Navigation -->
+        <div v-else class="d-flex align-items-center gap-3">
+
+            <!-- Creator -->
+            <router-link
+                v-if="currentUser.role === 'creator'"
+                to="/games/add"
+                class="text-decoration-none register"
+            >
+                + Add Content
+            </router-link>
+
+            <!-- Admin -->
+            <router-link
+                v-if="currentUser.role === 'admin'"
+                to="/admin"
+                class="text-decoration-none register"
+            >
+                Admin Dashboard
+            </router-link>
+
+            <router-link
+                to="/cart"
+                class="icon-link"
+            >
+                <img
+                    src="/cart.svg"
+                    alt="Cart"
+                    width="19"
+                    height="19"
+                />
+            </router-link>
+
+            <router-link
+                to="/profile"
+                class="text-decoration-none text-white"
+            >
+                {{ currentUser.username }}
+            </router-link>
+
+            <button
+                type="button"
+                class="logout-btn"
+                @click="handleLogout"
+            >
+                Logout
+            </button>
+
+        </div>
+
+    </nav>
+
+    <router-view></router-view>
 </template>
+
 
 <style scope>
 nav {
@@ -88,5 +178,18 @@ nav {
   font-size: 13px;
   font-weight: 700;
   box-shadow: 0 0 22px rgba(0, 242, 254, 0.5);
+}
+
+.logout-btn {
+    background: transparent;
+    border: 1px solid #252936;
+    color: var(--muted);
+    padding: 9px 14px;
+    font-size: 12px;
+}
+
+.logout-btn:hover {
+    color: var(--cyan);
+    border-color: var(--cyan);
 }
 </style>
