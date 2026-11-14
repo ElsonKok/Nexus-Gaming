@@ -12,8 +12,8 @@ const routes = [
     {path: '/game', component: Game },
     {path: '/favourite', component: Favourite },
     {path: '/about', component: About },
-    {path: '/login', component: Login },
-    {path: '/register', component: Register }
+    {path: '/login', component: Login, meta: { hideNav: true } },
+    {path: '/register', component: Register, meta: { hideNav: true } }
 ]
 
 const router = createRouter({
