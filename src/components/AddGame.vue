@@ -1,113 +1,200 @@
-
-<script setup>
-import { reactive } from 'vue';
-import { useRouter } from 'vue-router';
-import { gamesData } from '../assets/games.js';
-
-const router = useRouter();
-
-const platforms = [
-    'pc',
-    'playstation',
-    'xbox',
-    'switch'
-];
-
-const genres = [
-    'action',
-    'adventure',
-    'racing',
-    'sci-fi',
-    'rpg',
-    'strategy',
-    'simulation',
-    'sports',
-    'horror',
-    'puzzle'
-];
-
-const form = reactive({
-    title: '',
-    genre: 'action',
-    platforms: ['pc'],
-    rating: 0,
-    year: new Date().getFullYear(),
-    price: 0,
-    releaseDate: '',
-    img: '',
-    tagline: '',
-    description: ''
-});
-
-const errorMessage = reactive({
-    text: ''
-});
-
-function loadCurrentUser() {
-    try {
-        return JSON.parse(localStorage.getItem('user')) || {
-            id: 1,
-            username: 'Alex Morgan',
-            role: 'creator',
-            creatorGameIds: []
-        };
-    } catch {
+<script>
+export default {
+    name: 'AddGame',
+    data() {
         return {
-            id: 1,
-            username: 'Alex Morgan',
-            role: 'creator',
-            creatorGameIds: []
+            currentUser: null,
+            submitting: false,
+            errorMessage: '',
+            imagePreview: '',
+            imageFileName: '',
+            isToday: false,
+            platforms: [
+                'PC',
+                'PlayStation',
+                'Xbox',
+                'Nintendo Switch'
+            ],
+            genres: [
+                'Battle Royale',
+                'Sports',
+                'Shooter',
+                'Action RPG',
+                'MMORPG',
+                'Adventure',
+                'Racing',
+                'Strategy',
+                'Simulation',
+                'Horror',
+                'Puzzle'
+            ],
+            form: {
+                title: '',
+                genre: 'Action RPG',
+                platforms: ['PC'],
+                developer: '',
+                release_date: '',
+                description: '',
+                image: null,
+                url: '',
+                price: 0,
+                rating: 0
+            }
         };
+    },
+    computed: {
+        todayDate() {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+    },
+    watch: {
+        isToday(checked) {
+            if (checked) {
+                this.form.release_date = this.todayDate;
+            }
+        }
+    },
+    mounted() {
+        this.loadCurrentUser();
+    },
+    methods: {
+        loadCurrentUser() {
+            try {
+                this.currentUser =
+                    JSON.parse(localStorage.getItem('nexusUser')) ||
+                    JSON.parse(localStorage.getItem('user'));
+            } catch {
+                this.currentUser = null;
+            }
+
+            if (this.currentUser) {
+                this.form.developer =
+                    this.currentUser.developer_id ||
+                    this.currentUser.username ||
+                    '';
+            }
+        },
+        handleImageUpload(event) {
+            this.errorMessage = '';
+            const file = event.target.files?.[0];
+            if (!file) return;
+
+            if (!file.type.startsWith('image/')) {
+                this.errorMessage = 'Please select a valid image file (PNG, JPG, WEBP).';
+                event.target.value = '';
+                return;
+            }
+
+            // Guard against oversized files exceeding MySQL BLOB/LONGBLOB limits
+            const maxBytes = 5 * 1024 * 1024; // 5 MB
+            if (file.size > maxBytes) {
+                this.errorMessage = 'Image must be smaller than 5 MB.';
+                event.target.value = '';
+                return;
+            }
+
+            this.imageFileName = file.name;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const dataUrl = e.target?.result || '';
+                this.imagePreview = dataUrl;
+                this.form.image = dataUrl;
+            };
+            reader.onerror = () => {
+                this.errorMessage = 'Failed to read the selected image file.';
+            };
+            reader.readAsDataURL(file);
+        },
+        clearImage() {
+            this.form.image = null;
+            this.imagePreview = '';
+            this.imageFileName = '';
+            if (this.$refs.imageInput) {
+                this.$refs.imageInput.value = '';
+            }
+        },
+        addGame() {
+            this.errorMessage = '';
+
+            if (!this.form.platforms.length) {
+                this.errorMessage = 'Please select at least one platform.';
+                return;
+            }
+
+            const releaseDate = this.isToday ? this.todayDate : this.form.release_date;
+            if (!releaseDate) {
+                this.errorMessage = 'Please choose a release date or check "Release date is Today".';
+                return;
+            }
+
+            const developerValue =
+                this.currentUser?.developer_id ||
+                this.currentUser?.username ||
+                this.form.developer.trim();
+
+            if (!developerValue) {
+                this.errorMessage = 'Please log in with a developer account first.';
+                return;
+            }
+
+            const payload = {
+                title: this.form.title.trim(),
+                genre: this.form.genre,
+                platform: this.form.platforms.join(', '),
+                developer: developerValue,
+                release_date: releaseDate,
+                description: this.form.description.trim(),
+                image: this.form.image || null,
+                url: this.form.url.trim(),
+                price: Number(this.form.price) || 0,
+                rating: Number(this.form.rating) || 0
+            };
+
+            const baseApi = `/resources/apis.php`;
+            this.submitting = true;
+
+            fetch(`${baseApi}/game`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+                .then((res) => {
+                    if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+                    return res.json();
+                })
+                .then((data) => {
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+
+                    window.dispatchEvent(
+                        new CustomEvent('show-toast', {
+                            detail: { message: `${payload.title} published successfully!`, type: 'success' }
+                        })
+                    );
+                    this.$router.push('/profile');
+                })
+                .catch((error) => {
+                    this.errorMessage = 'Failed to publish game: ' + error.message;
+                })
+                .finally(() => {
+                    this.submitting = false;
+                });
+        },
+        cancel() {
+            this.$router.push('/profile');
+        }
     }
-}
-
-function addGame() {
-    if (!form.platforms.length) {
-        errorMessage.text = 'Please select at least one platform.';
-        return;
-    }
-
-    const currentUser = loadCurrentUser();
-
-    const newId = gamesData.length
-        ? Math.max(...gamesData.map(game => Number(game.id))) + 1
-        : 1;
-
-    const newGame = {
-        id: newId,
-        ...form,
-        platforms: [...form.platforms],
-        year: new Date(form.releaseDate).getFullYear(),
-        liked: false,
-        creatorId: currentUser.id
-    };
-
-    gamesData.push(newGame);
-
-    // Update the creator's temporary game ownership list
-    if (currentUser.role === 'creator') {
-        const creatorGameIds = currentUser.creatorGameIds || [];
-
-        currentUser.creatorGameIds = [
-            ...new Set([...creatorGameIds, newId])
-        ];
-
-        localStorage.setItem('user', JSON.stringify(currentUser));
-    }
-
-    router.push('/profile');
-}
-
-function cancel() {
-    router.push('/profile');
-}
+};
 </script>
 
 <template>
     <main class="game-form-page">
-
         <div class="container">
-
             <div class="page-heading">
                 <span class="eyebrow">CREATOR STUDIO</span>
                 <h1>Add New Game</h1>
@@ -115,7 +202,6 @@ function cancel() {
             </div>
 
             <form class="game-form-card" @submit.prevent="addGame">
-
                 <div class="form-section">
                     <h2>Basic Information</h2>
 
@@ -125,17 +211,15 @@ function cancel() {
                             v-model="form.title"
                             type="text"
                             placeholder="Enter game title"
-                            maxlength="100"
+                            maxlength="255"
                             required
                         />
                     </div>
 
                     <div class="row g-3">
-
                         <div class="col-md-6">
                             <div class="form-group">
                                 <label>Genre *</label>
-
                                 <select v-model="form.genre" required>
                                     <option
                                         v-for="genre in genres"
@@ -151,7 +235,6 @@ function cancel() {
                         <div class="col-md-6">
                             <div class="form-group">
                                 <label>Price (RM) *</label>
-
                                 <input
                                     v-model.number="form.price"
                                     type="number"
@@ -161,14 +244,11 @@ function cancel() {
                                 />
                             </div>
                         </div>
-
                     </div>
 
                     <div class="form-group">
                         <label>Supported Platforms *</label>
-
                         <div class="platform-options">
-
                             <label
                                 v-for="platform in platforms"
                                 :key="platform"
@@ -179,10 +259,8 @@ function cancel() {
                                     type="checkbox"
                                     :value="platform"
                                 />
-
                                 {{ platform }}
                             </label>
-
                         </div>
                     </div>
                 </div>
@@ -191,15 +269,21 @@ function cancel() {
                     <h2>Game Details</h2>
 
                     <div class="row g-3">
-
                         <div class="col-md-6">
                             <div class="form-group">
-                                <label>Release Date *</label>
+                                <div class="d-flex align-items-center justify-content-between">
+                                    <label class="mb-0">Release Date *</label>
+                                    <label class="today-check">
+                                        <input v-model="isToday" type="checkbox" />
+                                        <span>Release date is Today</span>
+                                    </label>
+                                </div>
 
                                 <input
-                                    v-model="form.releaseDate"
+                                    v-model="form.release_date"
                                     type="date"
-                                    required
+                                    :disabled="isToday"
+                                    :required="!isToday"
                                 />
                             </div>
                         </div>
@@ -207,7 +291,6 @@ function cancel() {
                         <div class="col-md-6">
                             <div class="form-group">
                                 <label>Rating (0 - 5)</label>
-
                                 <input
                                     v-model.number="form.rating"
                                     type="number"
@@ -217,34 +300,41 @@ function cancel() {
                                 />
                             </div>
                         </div>
-
                     </div>
 
                     <div class="form-group">
-                        <label>Thumbnail Image URL</label>
-
+                        <label>Game Cover Image (Saved to Database)</label>
                         <input
-                            v-model="form.img"
-                            type="url"
-                            placeholder="https://example.com/game-image.jpg"
+                            ref="imageInput"
+                            type="file"
+                            accept="image/*"
+                            class="file-input"
+                            @change="handleImageUpload"
                         />
+
+                        <div v-if="imagePreview" class="image-preview-box">
+                            <img :src="imagePreview" alt="Selected game cover preview" />
+                            <div class="preview-meta">
+                                <span>{{ imageFileName }}</span>
+                                <button type="button" class="remove-img-btn" @click="clearImage">
+                                    Remove
+                                </button>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="form-group">
-                        <label>Tagline *</label>
-
+                        <label>Official Website URL *</label>
                         <input
-                            v-model="form.tagline"
-                            type="text"
-                            placeholder="A short introduction to your game"
-                            maxlength="150"
+                            v-model="form.url"
+                            type="url"
+                            placeholder="https://example.com/your-game"
                             required
                         />
                     </div>
 
                     <div class="form-group">
                         <label>Description *</label>
-
                         <textarea
                             v-model="form.description"
                             rows="5"
@@ -254,30 +344,30 @@ function cancel() {
                     </div>
                 </div>
 
-                <p v-if="errorMessage.text" class="error-message">
-                    {{ errorMessage.text }}
+                <p v-if="errorMessage" class="error-message">
+                    {{ errorMessage }}
                 </p>
 
                 <div class="form-actions">
-
                     <button
                         type="button"
                         class="cancel-btn"
+                        :disabled="submitting"
                         @click="cancel"
                     >
                         Cancel
                     </button>
 
-                    <button type="submit" class="submit-btn">
-                        Publish Game
+                    <button
+                        type="submit"
+                        class="submit-btn"
+                        :disabled="submitting"
+                    >
+                        {{ submitting ? 'Publishing...' : 'Publish Game' }}
                     </button>
-
                 </div>
-
             </form>
-
         </div>
-
     </main>
 </template>
 
@@ -344,7 +434,7 @@ function cancel() {
     font-weight: 700;
 }
 
-.form-group input,
+.form-group input:not([type="checkbox"]),
 .form-group select,
 .form-group textarea {
     width: 100%;
@@ -355,6 +445,11 @@ function cancel() {
     outline: none;
 }
 
+.form-group input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 .form-group input:focus,
 .form-group select:focus,
 .form-group textarea:focus {
@@ -363,6 +458,64 @@ function cancel() {
 
 .form-group select option {
     background: #0c0e13;
+}
+
+.today-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--cyan);
+    cursor: pointer;
+}
+
+.today-check input[type="checkbox"] {
+    width: auto;
+    accent-color: var(--cyan);
+    cursor: pointer;
+}
+
+.file-input {
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.image-preview-box {
+    border: 1px solid var(--line);
+    background: #0c0e13;
+    padding: 12px;
+    display: grid;
+    gap: 10px;
+}
+
+.image-preview-box img {
+    width: 100%;
+    max-height: 240px;
+    object-fit: cover;
+    border: 1px solid var(--line);
+}
+
+.preview-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--muted);
+}
+
+.remove-img-btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: #ff6969;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.remove-img-btn:hover {
+    border-color: #ff6969;
 }
 
 .platform-options {
@@ -379,7 +532,6 @@ function cancel() {
     background: #ffffff0b;
     border: 1px solid var(--line);
     cursor: pointer;
-    text-transform: capitalize;
 }
 
 .platform-option input {
@@ -398,6 +550,7 @@ function cancel() {
     font-size: 12px;
     font-weight: 700;
     border: 1px solid var(--line);
+    cursor: pointer;
 }
 
 .cancel-btn {
@@ -409,6 +562,12 @@ function cancel() {
     background: var(--cyan);
     color: #061014;
     border-color: var(--cyan);
+}
+
+.submit-btn:disabled,
+.cancel-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
 }
 
 .error-message {

@@ -1,23 +1,219 @@
-<script setup>
-import { ref } from 'vue';
-import { useRouter } from 'vue-router';
+<script>
+export default {
+    name: 'FavouriteView',
+    data() {
+        return {
+            currentUser: null,
+            favorites: [],
+            purchasedGameIds: new Set(),
+            loading: false,
+            err: '',
+            movingId: null
+        };
+    },
+    computed: {
+        userId() {
+            return String(
+                this.currentUser?.user_id ||
+                this.currentUser?.developer_id ||
+                this.currentUser?.id ||
+                ''
+            ).trim();
+        },
+        isCreator() {
+            const role = String(this.currentUser?.role || '').toLowerCase();
+            return role === 'creator' || role === 'developer' || Boolean(this.currentUser?.developer_id);
+        }
+    },
+    mounted() {
+        this.loadUser();
+        if (this.userId) {
+            this.fetchFavourites();
+        }
+    },
+    methods: {
+        loadUser() {
+            try {
+                this.currentUser =
+                    JSON.parse(localStorage.getItem('nexusUser')) ||
+                    JSON.parse(localStorage.getItem('user'));
+            } catch {
+                this.currentUser = null;
+            }
+        },
+        toSlug(title) {
+            return String(title)
+                .toLowerCase()
+                .trim()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-|-$/g, '');
+        },
+        gameLink(item) {
+            return `/game/${this.toSlug(item.title)}`;
+        },
+        openGame(item) {
+            if (item.rawGame) {
+                sessionStorage.setItem('selectedGame', JSON.stringify(item.rawGame));
+            }
+        },
+        fetchFavourites() {
+            const baseApi = `/resources/apis.php`;
+            this.loading = true;
+            this.err = '';
 
-const router = useRouter();
+            Promise.all([
+                fetch(`${baseApi}/favourite/user_id/${encodeURIComponent(this.userId)}`).then((r) => r.json()),
+                fetch(`${baseApi}/game`).then((r) => r.json()),
+                fetch(`${baseApi}/payment/user_id/${encodeURIComponent(this.userId)}`).then((r) => r.json()).catch(() => [])
+            ])
+                .then(([favRows, gameRows, paymentRows]) => {
+                    const favs = Array.isArray(favRows) ? favRows : [];
+                    const games = Array.isArray(gameRows) ? gameRows : [];
+                    const payments = Array.isArray(paymentRows) ? paymentRows : [];
 
-const favorites = ref([
-    { id: 1, title: 'Neon Veil', meta: 'Action RPG · PC · PS5', price: 29.99, img: '' },
-    { id: 2, title: 'Aether Protocol', meta: 'Sci-Fi · PC · PS5', price: 49.99, img: '' }
-]);
+                    this.purchasedGameIds = new Set(
+                        payments.map((p) => String(p.game_id).trim())
+                    );
 
-function removeFavorite(id) {
-    favorites.value = favorites.value.filter((item) => item.id !== id);
-}
+                    const gameMap = new Map(
+                        games.map((g) => [String(g.game_id).trim(), g])
+                    );
 
-function moveToCart(item) {
-    // Add item to your cart store/localStorage here
-    removeFavorite(item.id);
-    router.push('/cart');
-}
+                    this.favorites = favs.map((row) => {
+                        const gid = String(row.game_id).trim();
+                        const game = gameMap.get(gid) || {};
+                        const platforms = String(game.platform || '')
+                            .split(',')
+                            .map((p) => p.trim())
+                            .filter(Boolean)
+                            .join(' · ');
+
+                        const metaParts = [game.genre, platforms].filter(Boolean);
+
+                        return {
+                            fav_id: row.fav_id,
+                            user_id: row.user_id,
+                            game_id: gid,
+                            title: game.title || `Game (${gid})`,
+                            meta: metaParts.length ? metaParts.join(' · ') : 'Nexus Title',
+                            price: Number(game.price) || 0,
+                            img: game.image || '',
+                            isOwned: this.purchasedGameIds.has(gid),
+                            rawGame: game.game_id ? game : null
+                        };
+                    });
+                })
+                .catch((error) => {
+                    this.err = error.message;
+                })
+                .finally(() => {
+                    this.loading = false;
+                });
+        },
+        removeFavorite(item, silent = false) {
+            const baseApi = `/resources/apis.php`;
+            const previous = [...this.favorites];
+
+            this.favorites = this.favorites.filter((f) => f.fav_id !== item.fav_id);
+
+            return fetch(`${baseApi}/favourite/fav_id/${encodeURIComponent(item.fav_id)}`, {
+                method: 'DELETE'
+            })
+                .then((res) => {
+                    if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+                    if (!silent) {
+                        window.dispatchEvent(
+                            new CustomEvent('show-toast', {
+                                detail: { message: `Removed ${item.title} from favourites`, type: 'info' }
+                            })
+                        );
+                    }
+                })
+                .catch((error) => {
+                    this.favorites = previous;
+                    if (!silent) {
+                        window.dispatchEvent(
+                            new CustomEvent('show-toast', {
+                                detail: { message: 'Failed to remove: ' + error.message, type: 'error' }
+                            })
+                        );
+                    }
+                });
+        },
+        moveToCart(item) {
+            if (!this.userId) {
+                this.$router.push('/login');
+                return;
+            }
+
+            if (this.isCreator) {
+                window.dispatchEvent(
+                    new CustomEvent('show-toast', {
+                        detail: { message: 'Creator accounts cannot purchase games', type: 'error' }
+                    })
+                );
+                return;
+            }
+
+            if (item.isOwned) {
+                this.$router.push('/profile');
+                return;
+            }
+
+            const baseApi = `/resources/apis.php`;
+            this.movingId = item.fav_id;
+
+            fetch(`${baseApi}/cart/user_id/${encodeURIComponent(this.userId)}`)
+                .then((r) => r.json())
+                .then((existingRows) => {
+                    const carts = Array.isArray(existingRows) ? existingRows : [];
+                    const existing = carts.find((c) => String(c.game_id).trim() === item.game_id);
+
+                    if (existing && existing.cart_id) {
+                        const nextQty = (Number(existing.quantity) || 1) + 1;
+                        return fetch(`${baseApi}/cart/cart_id/${encodeURIComponent(existing.cart_id)}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ quantity: nextQty })
+                        });
+                    }
+
+                    return fetch(`${baseApi}/cart`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            user_id: this.userId,
+                            game_id: item.game_id,
+                            quantity: 1
+                        })
+                    });
+                })
+                .then((res) => {
+                    if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+                    return this.removeFavorite(item, true);
+                })
+                .then(() => {
+                    window.dispatchEvent(new Event('cart-changed'));
+                    window.dispatchEvent(
+                        new CustomEvent('show-toast', {
+                            detail: { message: `${item.title} moved to cart`, type: 'success' }
+                        })
+                    );
+                    this.$router.push('/cart');
+                })
+                .catch((error) => {
+                    window.dispatchEvent(
+                        new CustomEvent('show-toast', {
+                            detail: { message: 'Could not move to cart: ' + error.message, type: 'error' }
+                        })
+                    );
+                })
+                .finally(() => {
+                    this.movingId = null;
+                });
+        }
+    }
+};
 </script>
 
 <template>
@@ -25,30 +221,75 @@ function moveToCart(item) {
         <div class="page-heading">
             <span class="eyebrow">YOUR PERSONAL VAULT</span>
             <h1>Favorites</h1>
-            <p>{{ favorites.length }} saved {{ favorites.length === 1 ? 'world' : 'worlds' }}, ready when you are.</p>
+            <p v-if="userId">
+                {{ favorites.length }} saved {{ favorites.length === 1 ? 'world' : 'worlds' }}, ready when you are.
+            </p>
         </div>
 
-        <div v-if="favorites.length" class="d-grid gap-3">
-            <article v-for="item in favorites" :key="item.id" class="fav-card">
+        <div v-if="!userId" class="empty-vault text-center">
+            <p>Please log in to view your saved favorites.</p>
+            <router-link to="/login" class="btn btn-primary">Log In</router-link>
+        </div>
+
+        <div v-else-if="loading" class="empty-vault text-center">
+            <p class="mb-0">Loading your vault...</p>
+        </div>
+
+        <div v-else-if="err" class="empty-vault text-center">
+            <p class="text-danger mb-0">Error loading favorites: {{ err }}</p>
+        </div>
+
+        <div v-else-if="favorites.length" class="d-grid gap-3">
+            <article v-for="item in favorites" :key="item.fav_id" class="fav-card">
                 <div class="row align-items-center g-3">
                     <div class="col-12 col-md-7 d-flex align-items-center gap-3">
                         <img v-if="item.img" :src="item.img" :alt="item.title" class="fav-cover" />
                         <div v-else class="fav-cover fav-fallback">{{ item.title[0] }}</div>
 
                         <div>
-                            <h2 class="mb-1">{{ item.title }}</h2>
+                            <router-link
+                                v-if="item.rawGame"
+                                :to="gameLink(item)"
+                                class="text-white text-decoration-none"
+                                @click="openGame(item)"
+                            >
+                                <h2 class="mb-1">{{ item.title }}</h2>
+                            </router-link>
+                            <h2 v-else class="mb-1">{{ item.title }}</h2>
                             <p class="mb-0">{{ item.meta }}</p>
                         </div>
                     </div>
 
                     <div class="col-12 col-md-5 d-flex align-items-center justify-content-between justify-content-md-end gap-3">
-                        <strong class="fav-price">RM {{ item.price.toFixed(2) }}</strong>
+                        <strong class="fav-price">
+                            {{ item.price === 0 ? 'Free' : `RM ${item.price.toFixed(2)}` }}
+                        </strong>
 
                         <div class="d-flex align-items-center gap-2">
-                            <button type="button" class="btn btn-primary btn-sm px-3" @click="moveToCart(item)">
-                                Move to cart
+                            <router-link
+                                v-if="item.isOwned"
+                                to="/profile"
+                                class="btn btn-owned btn-sm px-3 text-decoration-none"
+                            >
+                                In Library
+                            </router-link>
+
+                            <button
+                                v-else
+                                type="button"
+                                class="btn btn-primary btn-sm px-3"
+                                :disabled="movingId === item.fav_id"
+                                @click="moveToCart(item)"
+                            >
+                                {{ movingId === item.fav_id ? 'Moving...' : 'Move to cart' }}
                             </button>
-                            <button type="button" class="remove" aria-label="Remove" @click="removeFavorite(item.id)">
+
+                            <button
+                                type="button"
+                                class="remove"
+                                aria-label="Remove"
+                                @click="removeFavorite(item)"
+                            >
                                 ×
                             </button>
                         </div>
@@ -124,6 +365,10 @@ function moveToCart(item) {
     font-size: 18px;
 }
 
+.fav-card h2:hover {
+    color: var(--cyan);
+}
+
 .fav-card p {
     color: var(--muted);
     font-size: 12px;
@@ -158,6 +403,12 @@ function moveToCart(item) {
     border-color: var(--cyan);
     color: #061014;
     filter: brightness(1.08);
+}
+
+.btn-owned {
+    color: #55f5ae;
+    background: rgba(85, 245, 174, 0.1);
+    border: 1px solid #55f5ae;
 }
 
 .remove {

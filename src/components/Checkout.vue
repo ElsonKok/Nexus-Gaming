@@ -1,61 +1,236 @@
-<script setup>
-import { ref, computed } from 'vue';
-
-const activeStep = ref(1);
-const isRedirecting = ref(false);
-
-const billing = ref({
-    firstName: '',
-    lastName: '',
-    email: '',
-    country: 'malaysia'
-});
-
-const card = ref({
-    number: '',
-    expiry: '',
-    cvc: ''
-});
-
-const items = [
-    { id: 1, title: 'Orbit Zero', platforms: 'PC · Xbox', price: 29.99, qty: 1 },
-    { id: 2, title: 'Aether Protocol', platforms: 'PC · PlayStation', price: 49.99, qty: 1 }
-];
-
-const subtotal = computed(() => items.reduce((sum, item) => sum + item.price * item.qty, 0));
-const tax = computed(() => subtotal.value * 0.06);
-const total = computed(() => subtotal.value + tax.value);
-
-function nextStep() {
-    activeStep.value = 2;
-}
-
-async function submitOrder() {
-    isRedirecting.value = true;
-
-    try {
-        // Replace with your payment gateway endpoint
-        const res = await fetch('/api/payment/create-session', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                billing: billing.value,
-                card: card.value,
-                items,
-                total: Number(total.value.toFixed(2))
-            })
-        });
-
-        const data = await res.json();
-
-        if (data.redirectUrl) {
-            window.location.href = data.redirectUrl;
+<script>
+export default {
+    name: 'CheckoutView',
+    data() {
+        return {
+            currentUser: null,
+            activeStep: 1,
+            isProcessing: false,
+            errorMsg: '',
+            successMsg: '',
+            billing: {
+                firstName: '',
+                lastName: '',
+                email: '',
+                country: 'malaysia'
+            },
+            items: []
+        };
+    },
+    computed: {
+        userId() {
+            return String(
+                this.currentUser?.user_id || this.currentUser?.id || ''
+            ).trim();
+        },
+        subtotal() {
+            return this.items.reduce(
+                (sum, item) => sum + Number(item.price) * Number(item.quantity || item.qty || 1),
+                0
+            );
+        },
+        tax() {
+            return this.subtotal * 0.06;
+        },
+        total() {
+            return this.subtotal + this.tax;
         }
-    } catch (err) {
-        console.error('Payment redirect failed:', err);
-        isRedirecting.value = false;
+    },
+    mounted() {
+        this.loadUser();
+        this.loadCheckoutItems();
+
+        // Check if returning from Stripe Checkout
+        if (this.$route.query.success === 'true') {
+            this.finalizeOrderAfterStripe();
+        } else if (this.$route.query.canceled === 'true') {
+            this.activeStep = 2;
+            this.errorMsg = 'Stripe payment was canceled. You can try again below.';
+        }
+    },
+    methods: {
+        loadUser() {
+            try {
+                this.currentUser =
+                    JSON.parse(localStorage.getItem('nexusUser')) ||
+                    JSON.parse(localStorage.getItem('user'));
+
+                if (this.currentUser?.email) {
+                    this.billing.email = this.currentUser.email;
+                }
+            } catch {
+                this.currentUser = null;
+            }
+        },
+        loadCheckoutItems() {
+            const savedCheckout = sessionStorage.getItem('checkoutData');
+            if (savedCheckout) {
+                try {
+                    const parsed = JSON.parse(savedCheckout);
+                    if (Array.isArray(parsed.items) && parsed.items.length > 0) {
+                        this.items = parsed.items.map((item) => ({
+                            ...item,
+                            quantity: Number(item.quantity || item.qty || 1),
+                            price: Number(item.price) || 0
+                        }));
+                        return;
+                    }
+                } catch {
+                    // Fallback to API fetch below
+                }
+            }
+
+            if (!this.userId) return;
+
+            const baseApi = `/resources/apis.php`;
+            Promise.all([
+                fetch(`${baseApi}/cart/user_id/${encodeURIComponent(this.userId)}`).then((r) => r.json()),
+                fetch(`${baseApi}/game`).then((r) => r.json())
+            ])
+                .then(([cartRows, gameRows]) => {
+                    const carts = Array.isArray(cartRows) ? cartRows : [];
+                    const games = Array.isArray(gameRows) ? gameRows : [];
+                    const gameMap = new Map(games.map((g) => [String(g.game_id), g]));
+
+                    this.items = carts.map((row) => {
+                        const game = gameMap.get(String(row.game_id)) || {};
+                        return {
+                            cart_id: row.cart_id,
+                            game_id: row.game_id,
+                            title: game.title || `Game (${row.game_id})`,
+                            platforms: game.platform || game.genre || 'PC',
+                            price: Number(game.price) || 0,
+                            quantity: Number(row.quantity) || 1,
+                            img: game.image || ''
+                        };
+                    });
+                })
+                .catch((err) => {
+                    this.errorMsg = 'Failed to load order items: ' + err.message;
+                });
+        },
+        nextStep() {
+            this.errorMsg = '';
+            this.activeStep = 2;
+        },
+        async submitOrder() {
+            this.errorMsg = '';
+            this.successMsg = '';
+
+            if (!this.userId) {
+                this.$router.push('/login');
+                return;
+            }
+
+            if (!this.items.length) {
+                this.errorMsg = 'Your cart is empty.';
+                return;
+            }
+
+            // Save pending items so they are guaranteed available when Stripe redirects back
+            sessionStorage.setItem(
+                'checkoutData',
+                JSON.stringify({
+                    items: this.items,
+                    subtotal: this.subtotal,
+                    tax: this.tax,
+                    total: this.total
+                })
+            );
+
+            // If all games are free (RM 0.00), skip Stripe and finalize directly
+            if (this.total <= 0) {
+                this.finalizeOrderAfterStripe();
+                return;
+            }
+
+            this.isProcessing = true;
+
+            try {
+                // Build base app URL supporting both hash (#/checkout) and history (/checkout) router modes
+                const appBase = window.location.href.split('/checkout')[0];
+
+                const res = await fetch('/resources/checkout.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_id: this.userId,
+                        email: this.billing.email,
+                        billing: this.billing,
+                        items: this.items,
+                        returnUrl: appBase
+                    })
+                });
+
+                const data = await res.json();
+
+                if (!res.ok || data.error) {
+                    throw new Error(data.error || `HTTP error: ${res.status}`);
+                }
+
+                if (data.url) {
+                    window.location.href = data.url;
+                } else {
+                    throw new Error('Stripe checkout URL was not returned.');
+                }
+            } catch (err) {
+                this.errorMsg = 'Payment redirect failed: ' + err.message;
+                this.isProcessing = false;
+            }
+        },
+        finalizeOrderAfterStripe() {
+            if (!this.userId || !this.items.length) return;
+
+            const baseApi = `/resources/apis.php`;
+            const today = new Date().toISOString().split('T')[0];
+            this.isProcessing = true;
+            this.activeStep = 2;
+            this.successMsg = 'Payment verified! Unlocking your games...';
+
+            const recordPayments = this.items.reduce((chain, item) => {
+                return chain.then(() => {
+                    return fetch(`${baseApi}/payment`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            user_id: this.userId,
+                            game_id: item.game_id,
+                            date: today
+                        })
+                    })
+                        .then((res) => {
+                            if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+                            return res.json();
+                        })
+                        .then((data) => {
+                            if (data.error) throw new Error(data.error);
+                        });
+                });
+            }, Promise.resolve());
+
+            recordPayments
+                .then(() => {
+                    return fetch(`${baseApi}/cart/user_id/${encodeURIComponent(this.userId)}`, {
+                        method: 'DELETE'
+                    });
+                })
+                .then(() => {
+                    sessionStorage.removeItem('checkoutData');
+                    window.dispatchEvent(new Event('cart-changed'));
+                    this.successMsg = 'Payment successful! Redirecting to your library...';
+                    setTimeout(() => {
+                        this.$router.push('/profile');
+                    }, 900);
+                })
+                .catch((err) => {
+                    this.errorMsg = 'Error recording order: ' + err.message;
+                })
+                .finally(() => {
+                    this.isProcessing = false;
+                });
+        }
     }
-}
+};
 </script>
 
 <template>
@@ -73,6 +248,7 @@ async function submitOrder() {
         <div class="row g-4 align-items-start">
             <div class="col-lg-8">
                 <div class="accordion">
+                    <!-- Step 1: Contact & Billing -->
                     <section :class="{ open: activeStep === 1 }">
                         <button type="button" @click="activeStep = 1">
                             <span>1</span>
@@ -118,21 +294,27 @@ async function submitOrder() {
                         </form>
                     </section>
 
-                    <!-- Step 2: Card Payment -->
+                    <!-- Step 2: Stripe Hosted Payment -->
                     <section :class="{ open: activeStep === 2 }">
                         <button type="button" @click="activeStep = 2">
                             <span>2</span>
                             <div class="d-grid gap-1">
-                                <strong>Card Payment</strong>
-                                <small>Visa & Mastercard accepted.</small>
+                                <strong>Stripe Secure Payment</strong>
+                                <small>You will be redirected to Stripe to complete your payment.</small>
                             </div>
                             <span class="toggle-icon border-0">{{ activeStep === 2 ? '−' : '+' }}</span>
                         </button>
 
                         <form v-show="activeStep === 2" class="accordion-content" @submit.prevent="submitOrder">
+                            <p class="small text-muted mb-2">
+                                Click below to proceed to Stripe's encrypted checkout page. Visa, Mastercard, and FPX/wallets supported.
+                            </p>
 
-                            <button type="submit" class="btn btn-primary w-100 mt-3" :disabled="isRedirecting">
-                                {{ isRedirecting ? 'Redirecting to Payment...' : `Pay RM ${total.toFixed(2)}` }}
+                            <p v-if="errorMsg" class="text-danger small mt-2 mb-0">{{ errorMsg }}</p>
+                            <p v-if="successMsg" class="text-info small mt-2 mb-0">{{ successMsg }}</p>
+
+                            <button type="submit" class="btn btn-primary w-100 mt-3" :disabled="isProcessing || !items.length">
+                                {{ isProcessing ? 'Redirecting to Stripe...' : `Pay RM ${total.toFixed(2)}` }}
                             </button>
                         </form>
                     </section>
@@ -144,13 +326,16 @@ async function submitOrder() {
                 <div class="order-card">
                     <h2>Order summary</h2>
 
-                    <div v-for="item in items" :key="item.id" class="summary-item d-flex justify-content-between">
-                        <div>
-                            <strong class="text-white d-block">{{ item.title }}</strong>
-                            <small>{{ item.platforms }} × {{ item.qty }}</small>
+                    <div v-if="items.length">
+                        <div v-for="item in items" :key="item.cart_id || item.game_id" class="summary-item d-flex justify-content-between my-3">
+                            <div>
+                                <strong class="text-white d-block">{{ item.title }}</strong>
+                                <small>{{ item.platforms }} × {{ item.quantity }}</small>
+                            </div>
+                            <span class="text-white">RM {{ (item.price * item.quantity).toFixed(2) }}</span>
                         </div>
-                        <span class="text-white">RM {{ (item.price * item.qty).toFixed(2) }}</span>
                     </div>
+                    <p v-else class="small text-muted">No items in checkout.</p>
 
                     <hr />
 

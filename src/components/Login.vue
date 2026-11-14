@@ -276,6 +276,12 @@ export default {
                             }
 
                             saveUser(userSession);
+                            const firstName = (userSession.username || 'Player').split(' ')[0];
+                            window.dispatchEvent(
+                                new CustomEvent('show-toast', {
+                                    detail: { message: `Welcome to Nexus, ${firstName}`, type: 'success' }
+                                })
+                            );
                             self.$router.push('/profile');
                         });
                 })
@@ -310,6 +316,12 @@ export default {
                         userSession.id = matchedUser.user_id;
                         userSession.role = 'user';
                         saveUser(userSession);
+                        const firstName = (userSession.username || 'Player').split(' ')[0];
+                        window.dispatchEvent(
+                            new CustomEvent('show-toast', {
+                                detail: { message: `Welcome back, ${firstName}`, type: 'success' }
+                            })
+                        );
                         self.$router.push('/profile');
                     } else if (matchedDev) {
                         const { passwd, ...devSession } = matchedDev;

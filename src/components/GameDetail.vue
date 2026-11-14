@@ -25,29 +25,16 @@
         <main class="detail-layout m-auto">
             <div class="row g-5">
                 <div class="col-lg-8">
-                    <!-- Screenshot Gallery -->
+                    <!-- Main Preview -->
                     <div class="gallery mb-4">
                         <div class="gallery-main">
                             <img
-                                v-if="screenshots[activeShot].img"
-                                :src="screenshots[activeShot].img"
-                                :alt="screenshots[activeShot].label"
+                                v-if="game.image"
+                                :src="game.image"
+                                :alt="game.title"
                             />
                             <div v-else class="shot-placeholder">
-                                <span>PREVIEW 0{{ activeShot + 1 }} — {{ screenshots[activeShot].label }}</span>
-                            </div>
-                        </div>
-
-                        <div class="row g-2 mt-2">
-                            <div v-for="(shot, i) in screenshots" :key="shot.id" class="col-4">
-                                <button
-                                    type="button"
-                                    class="thumb-btn w-100"
-                                    :class="{ active: activeShot === i }"
-                                    @click="activeShot = i"
-                                >
-                                    0{{ i + 1 }} · {{ shot.label }}
-                                </button>
+                                <span>MAIN PREVIEW — {{ game.title }}</span>
                             </div>
                         </div>
                     </div>
@@ -101,20 +88,52 @@
                 <!-- Sidebar Buy Card -->
                 <aside class="col-lg-4">
                     <div class="buy-card">
-                        <div class="price">
-                            <strong>{{ game.price === 0 ? 'Free' : `RM ${game.price.toFixed(2)}` }}</strong>
+                        <div class="price d-flex align-items-center justify-content-between">
+                            <strong>{{ isFree ? 'Free' : `RM ${game.price.toFixed(2)}` }}</strong>
+                            <span v-if="isPurchased" class="owned-badge">● IN LIBRARY</span>
+                            <span v-else-if="isFree" class="free-badge">FREE TO PLAY</span>
                         </div>
 
-                        <button type="button" class="btn btn-primary w-100" @click="addToCart">
-                            <img src="/cart.svg" alt="" width="18" height="18" />
-                            {{ addedToCart ? 'Added to Cart' : 'Add to Cart' }}
+                        <!-- Already Owned / Claimed State -->
+                        <router-link
+                            v-if="isPurchased"
+                            to="/profile"
+                            class="btn btn-owned w-100 text-decoration-none"
+                        >
+                            ✓ Owned · View in Library →
+                        </router-link>
+
+                        <!-- Free Game Claim State -->
+                        <button
+                            v-else-if="isFree"
+                            type="button"
+                            class="btn btn-primary w-100"
+                            :disabled="claimingFree"
+                            @click="claimFreeGame"
+                        >
+                            {{ claimingFree ? 'Claiming...' : '+ Claim Free Game' }}
                         </button>
+
+                        <!-- Paid Game Add to Cart State -->
+                        <button
+                            v-else
+                            type="button"
+                            class="btn btn-primary w-100"
+                            :disabled="addingToCart"
+                            @click="addToCart"
+                        >
+                            <img src="/cart.svg" alt="" width="18" height="18" />
+                            {{ addingToCart ? 'Adding...' : (addedToCart ? 'Added to Cart' : 'Add to Cart') }}
+                        </button>
+
+                        <p v-if="cartError" class="text-danger small mb-0">{{ cartError }}</p>
 
                         <button
                             type="button"
                             class="btn btn-secondary w-100"
                             :class="{ favorited: isFavorited }"
-                            @click="isFavorited = !isFavorited"
+                            :disabled="togglingFav"
+                            @click="toggleFavourite"
                         >
                             <span>{{ isFavorited ? '♥' : '♡' }}</span>
                             {{ isFavorited ? 'Saved in Favorites' : 'Add to Favourite' }}
@@ -131,15 +150,23 @@
                         </a>
 
                         <div class="buy-info">
-                            <span>● Developer: {{ game.developer }}</span>
+                            <span>● Developer: {{ developerName || game.developer }}</span>
                             <span>● Release Date: {{ game.release_date }}</span>
-                            <span>● Instant digital key delivery</span>
+                            <span>
+                                ● {{
+                                    isPurchased
+                                        ? 'Unlocked on your Nexus account'
+                                        : isFree
+                                            ? 'Free instant library unlock'
+                                            : 'Instant digital key delivery'
+                                }}
+                            </span>
                         </div>
 
-                        <div v-if="mode === 'creator'">
+                        <div v-if="isCreator">
                             <hr class="my-1" />
                             <span class="badge badge-violet align-self-start w-100">CREATOR ACCESS</span>
-                            <router-link to="/game/edit" class="btn btn-ghost w-100 text-decoration-none mt-2">
+                            <router-link :to="`/games/edit/${game.game_id}`" class="btn btn-ghost w-100 text-decoration-none mt-2">
                                 Edit Game
                             </router-link>
                         </div>
@@ -155,13 +182,19 @@ export default {
     name: 'GameDetail',
     data() {
         return {
-            mode: 'creator',
+            currentUser: null,
             game: null,
+            developerName: '',
             loading: false,
             err: '',
-            activeShot: 0,
             isFavorited: false,
+            favId: null,
+            togglingFav: false,
+            isPurchased: false,
+            claimingFree: false,
+            addingToCart: false,
             addedToCart: false,
+            cartError: '',
             specs: [
                 { label: 'OS', value: 'Windows 10/11 64-bit' },
                 { label: 'Processor', value: 'Intel Core i7-12700K / Ryzen 7 5800X' },
@@ -180,6 +213,21 @@ export default {
         };
     },
     computed: {
+        isFree() {
+            return Number(this.game?.price) === 0;
+        },
+        isCreator() {
+            const role = String(this.currentUser?.role || '').toLowerCase();
+            return role === 'creator' || role === 'developer' || Boolean(this.currentUser?.developer_id);
+        },
+        activeAccountId() {
+            return String(
+                this.currentUser?.user_id ||
+                this.currentUser?.developer_id ||
+                this.currentUser?.id ||
+                ''
+            ).trim();
+        },
         platformsText() {
             if (!this.game) return '';
             if (Array.isArray(this.game.platformList) && this.game.platformList.length) {
@@ -194,17 +242,10 @@ export default {
         releaseYear() {
             if (!this.game || !this.game.release_date) return '';
             return String(this.game.release_date).split('-')[0];
-        },
-        screenshots() {
-            const mainImg = this.game && this.game.image ? this.game.image : '';
-            return [
-                { id: 1, label: 'Main Preview', img: mainImg },
-                { id: 2, label: 'Gameplay View', img: '' },
-                { id: 3, label: 'World Overview', img: '' }
-            ];
         }
     },
     mounted() {
+        this.loadUser();
         this.loadGame();
     },
     watch: {
@@ -213,6 +254,15 @@ export default {
         }
     },
     methods: {
+        loadUser() {
+            try {
+                this.currentUser =
+                    JSON.parse(localStorage.getItem('nexusUser')) ||
+                    JSON.parse(localStorage.getItem('user'));
+            } catch {
+                this.currentUser = null;
+            }
+        },
         toSlug(title) {
             return String(title)
                 .toLowerCase()
@@ -235,6 +285,7 @@ export default {
                 platform: row.platform,
                 platformList,
                 developer: row.developer,
+                developer_id: row.developer_id || '',
                 release_date: row.release_date,
                 description: row.description,
                 image: row.image || '',
@@ -244,9 +295,81 @@ export default {
                 liked: Boolean(row.liked)
             };
         },
+        resolveDeveloperName() {
+            const rawDev = String(this.game?.developer_id || this.game?.developer || '').trim();
+            this.developerName = String(this.game?.developer || '').trim();
+
+            if (!rawDev) return;
+
+            const baseApi = `/resources/apis.php`;
+            fetch(`${baseApi}/developer`)
+                .then((res) => res.json())
+                .then((devs) => {
+                    if (!Array.isArray(devs)) return;
+                    const matched = devs.find(
+                        (d) =>
+                            String(d.developer_id).trim().toLowerCase() === rawDev.toLowerCase() ||
+                            String(d.username).trim().toLowerCase() === rawDev.toLowerCase()
+                    );
+                    if (matched && matched.username) {
+                        this.developerName = matched.username;
+                    }
+                })
+                .catch(() => {});
+        },
+        checkIfPurchased() {
+            this.isPurchased = false;
+            const uid = String(this.currentUser?.user_id || this.currentUser?.id || '').trim();
+            const gid = String(this.game?.game_id || '').trim();
+
+            if (!uid || !gid || this.isCreator) return;
+
+            const baseApi = `/resources/apis.php`;
+            fetch(`${baseApi}/payment/user_id/${encodeURIComponent(uid)}`)
+                .then((res) => res.json())
+                .then((rows) => {
+                    if (Array.isArray(rows)) {
+                        this.isPurchased = rows.some(
+                            (p) => String(p.game_id).trim() === gid
+                        );
+                    }
+                })
+                .catch(() => {
+                    this.isPurchased = false;
+                });
+        },
+        checkIfFavorited() {
+            this.isFavorited = false;
+            this.favId = null;
+
+            const uid = this.activeAccountId;
+            const gid = String(this.game?.game_id || '').trim();
+
+            if (!uid || !gid) return;
+
+            const baseApi = `/resources/apis.php`;
+            fetch(`${baseApi}/favourite/user_id/${encodeURIComponent(uid)}`)
+                .then((res) => res.json())
+                .then((rows) => {
+                    if (Array.isArray(rows)) {
+                        const match = rows.find((f) => String(f.game_id).trim() === gid);
+                        if (match) {
+                            this.isFavorited = true;
+                            this.favId = match.fav_id;
+                        }
+                    }
+                })
+                .catch(() => {});
+        },
         loadGame() {
             this.err = '';
-            this.activeShot = 0;
+            this.developerName = '';
+            this.addedToCart = false;
+            this.isPurchased = false;
+            this.isFavorited = false;
+            this.favId = null;
+            this.cartError = '';
+
             const slug = this.$route.params.slug;
             const saved = sessionStorage.getItem('selectedGame');
 
@@ -254,23 +377,30 @@ export default {
                 const parsed = JSON.parse(saved);
                 if (this.toSlug(parsed.title) === slug) {
                     this.game = this.normalizeRow(parsed);
-                    this.isFavorited = this.game.liked;
+                    this.resolveDeveloperName();
+                    this.checkIfPurchased();
+                    this.checkIfFavorited();
                     return;
                 }
             }
 
             // Fallback if opened directly or refreshed at /game/:slug
+            const baseApi = `/resources/apis.php`;
             this.loading = true;
-            fetch(`${import.meta.env.BASE_URL}resources/apis.php/`)
+            fetch(`${baseApi}/game`)
                 .then((res) => {
                     if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
                     return res.json();
                 })
                 .then((data) => {
-                    const match = data.find((row) => this.toSlug(row.title) === slug);
+                    const match = Array.isArray(data)
+                        ? data.find((row) => this.toSlug(row.title) === slug)
+                        : null;
                     if (match) {
                         this.game = this.normalizeRow(match);
-                        this.isFavorited = this.game.liked;
+                        this.resolveDeveloperName();
+                        this.checkIfPurchased();
+                        this.checkIfFavorited();
                     } else {
                         this.err = 'Game not found.';
                     }
@@ -282,18 +412,242 @@ export default {
                     this.loading = false;
                 });
         },
+        claimFreeGame() {
+            this.cartError = '';
+            this.loadUser();
+
+            const uid = String(this.currentUser?.user_id || this.currentUser?.id || '').trim();
+            if (!uid) {
+                this.$router.push('/login');
+                return;
+            }
+
+            if (this.isCreator) {
+                this.cartError = 'Creator accounts cannot claim games.';
+                return;
+            }
+
+            const gid = String(this.game?.game_id || '').trim();
+            if (!gid) {
+                this.cartError = 'Invalid game ID.';
+                return;
+            }
+
+            const now = new Date();
+            const paymentDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            const baseApi = `/resources/apis.php`;
+
+            this.claimingFree = true;
+            fetch(`${baseApi}/payment`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    user_id: uid,
+                    game_id: gid,
+                    payment_date: paymentDate,
+                    amount: 0
+                })
+            })
+                .then((res) => {
+                    if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+                    return res.json();
+                })
+                .then((data) => {
+                    if (data.error) throw new Error(data.error);
+                    this.isPurchased = true;
+                    window.dispatchEvent(
+                        new CustomEvent('show-toast', {
+                            detail: { message: `${this.game.title} added to your library!`, type: 'success' }
+                        })
+                    );
+                })
+                .catch((error) => {
+                    this.cartError = 'Could not claim game: ' + error.message;
+                })
+                .finally(() => {
+                    this.claimingFree = false;
+                });
+        },
+        toggleFavourite() {
+            this.loadUser();
+            const uid = this.activeAccountId;
+
+            if (!uid) {
+                this.$router.push('/login');
+                return;
+            }
+
+            const gid = String(this.game?.game_id || '').trim();
+            if (!gid) return;
+
+            const baseApi = `/resources/apis.php`;
+            this.togglingFav = true;
+
+            if (this.isFavorited && this.favId) {
+                fetch(`${baseApi}/favourite/fav_id/${encodeURIComponent(this.favId)}`, {
+                    method: 'DELETE'
+                })
+                    .then((res) => {
+                        if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+                        this.isFavorited = false;
+                        this.favId = null;
+                        window.dispatchEvent(
+                            new CustomEvent('show-toast', {
+                                detail: { message: 'Removed from favourites', type: 'info' }
+                            })
+                        );
+                    })
+                    .catch((error) => {
+                        window.dispatchEvent(
+                            new CustomEvent('show-toast', {
+                                detail: { message: 'Error: ' + error.message, type: 'error' }
+                            })
+                        );
+                    })
+                    .finally(() => {
+                        this.togglingFav = false;
+                    });
+            } else {
+                fetch(`${baseApi}/favourite`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_id: uid,
+                        game_id: gid
+                    })
+                })
+                    .then((res) => {
+                        if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+                        return res.json();
+                    })
+                    .then((data) => {
+                        if (data.error) throw new Error(data.error);
+                        this.isFavorited = true;
+                        this.favId = data.fav_id || null;
+                        window.dispatchEvent(
+                            new CustomEvent('show-toast', {
+                                detail: { message: `Saved ${this.game.title} to favourites`, type: 'success' }
+                            })
+                        );
+                    })
+                    .catch((error) => {
+                        window.dispatchEvent(
+                            new CustomEvent('show-toast', {
+                                detail: { message: 'Error: ' + error.message, type: 'error' }
+                            })
+                        );
+                    })
+                    .finally(() => {
+                        this.togglingFav = false;
+                    });
+            }
+        },
         addToCart() {
-            this.addedToCart = true;
-            setTimeout(() => this.$router.push('/cart'), 400);
+            this.cartError = '';
+            this.loadUser();
+
+            if (this.isPurchased) {
+                window.dispatchEvent(
+                    new CustomEvent('show-toast', {
+                        detail: { message: 'You already own this game', type: 'info' }
+                    })
+                );
+                return;
+            }
+
+            if (this.isFree) {
+                this.claimFreeGame();
+                return;
+            }
+
+            const uid = String(this.currentUser?.user_id || this.currentUser?.id || '').trim();
+            if (!uid) {
+                this.$router.push('/login');
+                return;
+            }
+
+            if (this.isCreator) {
+                this.cartError = 'Creator accounts cannot purchase games.';
+                return;
+            }
+
+            const gid = String(this.game?.game_id || '').trim();
+            if (!gid) {
+                this.cartError = 'Invalid game ID.';
+                return;
+            }
+
+            const baseApi = `/resources/apis.php`;
+            this.addingToCart = true;
+
+            // Check if this game is already in the user's cart
+            fetch(`${baseApi}/cart/user_id/${encodeURIComponent(uid)}`)
+                .then((res) => res.json())
+                .then((existingRows) => {
+                    const items = Array.isArray(existingRows) ? existingRows : [];
+                    const existingItem = items.find((row) => String(row.game_id) === gid);
+
+                    if (existingItem && existingItem.cart_id) {
+                        const nextQty = (Number(existingItem.quantity) || 1) + 1;
+                        return fetch(`${baseApi}/cart/cart_id/${encodeURIComponent(existingItem.cart_id)}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ quantity: nextQty })
+                        });
+                    }
+
+                    // Insert new cart row; apis.php auto-generates C0001
+                    return fetch(`${baseApi}/cart`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            user_id: uid,
+                            game_id: gid,
+                            quantity: 1
+                        })
+                    });
+                })
+                .then((res) => {
+                    if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+                    return res.json();
+                })
+                .then((data) => {
+                    if (data.error) {
+                        this.cartError = data.error;
+                        return;
+                    }
+                    this.addedToCart = true;
+                    window.dispatchEvent(new Event('cart-changed'));
+                    window.dispatchEvent(
+                        new CustomEvent('show-toast', {
+                            detail: { message: `${this.game.title} added to cart`, type: 'success' }
+                        })
+                    );
+                    setTimeout(() => this.$router.push('/cart'), 400);
+                })
+                .catch((error) => {
+                    this.cartError = 'Could not add to cart: ' + error.message;
+                })
+                .finally(() => {
+                    this.addingToCart = false;
+                });
         },
         submitReview() {
             const text = this.newReview.trim();
             if (!text) return;
 
+            const authorName = this.currentUser?.username || 'PlayerOne';
+            const initials = authorName
+                .split(' ')
+                .map((w) => w[0])
+                .join('')
+                .slice(0, 2)
+                .toUpperCase();
+
             this.reviews.unshift({
                 id: Date.now(),
-                initials: 'PX',
-                author: 'PlayerOne',
+                initials: initials || 'PX',
+                author: authorName,
                 text
             });
             this.newReview = '';
@@ -364,7 +718,7 @@ export default {
     padding: 50px max(4vw, 28px) 100px;
 }
 
-/* Gallery */
+/* Main Preview */
 .gallery-main {
     aspect-ratio: 16 / 9;
     border: 1px solid var(--line);
@@ -386,25 +740,6 @@ export default {
     font: 600 12px 'Space Grotesk', sans-serif;
     letter-spacing: 0.15em;
     background: radial-gradient(circle, rgba(0, 242, 254, 0.06), transparent 70%);
-}
-
-.thumb-btn {
-    background: var(--panel);
-    border: 1px solid var(--line);
-    color: var(--muted);
-    padding: 10px 12px;
-    font-size: 11px;
-    text-align: left;
-    cursor: pointer;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.thumb-btn.active,
-.thumb-btn:hover {
-    border-color: var(--cyan);
-    color: var(--cyan);
 }
 
 /* Prose */
@@ -523,6 +858,26 @@ export default {
     font: 700 32px 'Space Grotesk', sans-serif;
 }
 
+.owned-badge {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    color: #55f5ae;
+    background: rgba(85, 245, 174, 0.1);
+    border: 1px solid rgba(85, 245, 174, 0.45);
+    padding: 5px 9px;
+}
+
+.free-badge {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    color: var(--cyan);
+    background: rgba(0, 242, 254, 0.1);
+    border: 1px solid rgba(0, 242, 254, 0.45);
+    padding: 5px 9px;
+}
+
 .buy-info {
     color: var(--muted);
     gap: 8px;
@@ -563,6 +918,17 @@ export default {
     border-color: var(--cyan);
     color: #061014;
     filter: brightness(1.08);
+}
+
+.btn-owned {
+    color: #55f5ae;
+    background: rgba(85, 245, 174, 0.1);
+    border-color: #55f5ae;
+}
+
+.btn-owned:hover {
+    background: rgba(85, 245, 174, 0.18);
+    color: #55f5ae;
 }
 
 .btn-secondary {

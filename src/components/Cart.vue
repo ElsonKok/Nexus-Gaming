@@ -1,32 +1,159 @@
-<script setup>
-import { ref, computed } from 'vue';
+<script>
+export default {
+    name: 'CartView',
+    data() {
+        return {
+            currentUser: null,
+            cartItems: [],
+            taxRate: 0.06,
+            loading: false,
+            err: ''
+        };
+    },
+    computed: {
+        userId() {
+            return String(
+                this.currentUser?.user_id || this.currentUser?.id || ''
+            ).trim();
+        },
+        subtotal() {
+            return this.cartItems.reduce(
+                (sum, item) => sum + Number(item.price) * Number(item.quantity),
+                0
+            );
+        },
+        tax() {
+            return this.subtotal * this.taxRate;
+        },
+        total() {
+            return this.subtotal + this.tax;
+        }
+    },
+    mounted() {
+        this.loadUser();
+        if (this.userId) {
+            this.fetchCart();
+        }
+    },
+    methods: {
+        loadUser() {
+            try {
+                this.currentUser =
+                    JSON.parse(localStorage.getItem('nexusUser')) ||
+                    JSON.parse(localStorage.getItem('user'));
+            } catch {
+                this.currentUser = null;
+            }
+        },
+        fetchCart() {
+            const baseApi = `/resources/apis.php`;
+            this.loading = true;
+            this.err = '';
 
-const cartItems = ref([
-    { id: 1, title: 'Orbit Zero', platforms: 'PC · Xbox', price: 29.99, qty: 1, img: '' },
-    { id: 2, title: 'Aether Protocol', platforms: 'PC · PlayStation', price: 49.99, qty: 1, img: '' }
-]);
+            Promise.all([
+                fetch(`${baseApi}/cart/user_id/${encodeURIComponent(this.userId)}`).then((r) => r.json()),
+                fetch(`${baseApi}/game`).then((r) => r.json())
+            ])
+                .then(([cartRows, gameRows]) => {
+                    const carts = Array.isArray(cartRows) ? cartRows : [];
+                    const games = Array.isArray(gameRows) ? gameRows : [];
 
-const taxRate = 0.06;
+                    const gameMap = new Map(
+                        games.map((g) => [String(g.game_id), g])
+                    );
 
-const subtotal = computed(() =>
-    cartItems.value.reduce((sum, item) => sum + item.price * item.qty, 0)
-);
+                    const mergedMap = new Map();
 
-const tax = computed(() => subtotal.value * taxRate);
-const total = computed(() => subtotal.value + tax.value);
+                    carts.forEach((row) => {
+                        const gid = String(row.game_id);
+                        const game = gameMap.get(gid) || {};
+                        const rowQty = Number(row.quantity) || 1;
 
-function updateQty(item, delta) {
-    const next = item.qty + delta;
-    if (next <= 0) {
-        removeItem(item.id);
-    } else {
-        item.qty = next;
+                        if (mergedMap.has(gid)) {
+                            const existing = mergedMap.get(gid);
+                            existing.quantity += rowQty;
+                            existing.extraCartIds.push(row.cart_id);
+                        } else {
+                            mergedMap.set(gid, {
+                                cart_id: row.cart_id,
+                                extraCartIds: [],
+                                user_id: row.user_id,
+                                game_id: gid,
+                                title: game.title || `Game (${gid})`,
+                                platforms: game.platforms || game.platform || game.genre || 'PC',
+                                price: Number(game.price) || 0,
+                                quantity: rowQty,
+                                img: game.image || ''
+                            });
+                        }
+                    });
+
+                    this.cartItems = Array.from(mergedMap.values());
+                })
+                .catch((error) => {
+                    this.err = error.message;
+                })
+                .finally(() => {
+                    this.loading = false;
+                });
+        },
+        updateQty(item, delta) {
+            const next = item.quantity + delta;
+            if (next <= 0) {
+                this.removeItem(item);
+                return;
+            }
+
+            const prevQty = item.quantity;
+            item.quantity = next;
+
+            const baseApi = `/resources/apis.php`;
+            fetch(`${baseApi}/cart/cart_id/${encodeURIComponent(item.cart_id)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ quantity: next })
+            })
+                .then((res) => {
+                    if (!res.ok) throw new Error('Failed to update quantity');
+                })
+                .catch(() => {
+                    item.quantity = prevQty;
+                });
+        },
+        removeItem(item) {
+            const baseApi = `/resources/apis.php`;
+            const idsToDelete = [item.cart_id, ...(item.extraCartIds || [])].filter(Boolean);
+
+            this.cartItems = this.cartItems.filter((i) => i.cart_id !== item.cart_id);
+
+            Promise.all(
+                idsToDelete.map((cid) =>
+                    fetch(`${baseApi}/cart/cart_id/${encodeURIComponent(cid)}`, {
+                        method: 'DELETE'
+                    })
+                )
+            )
+                .then(() => {
+                    window.dispatchEvent(new Event('cart-changed'));
+                })
+                .catch(() => {
+                    this.fetchCart();
+                });
+        },
+        proceedToCheckout() {
+            sessionStorage.setItem(
+                'checkoutData',
+                JSON.stringify({
+                    items: this.cartItems,
+                    subtotal: this.subtotal,
+                    tax: this.tax,
+                    total: this.total
+                })
+            );
+            this.$router.push('/checkout');
+        }
     }
-}
-
-function removeItem(id) {
-    cartItems.value = cartItems.value.filter((item) => item.id !== id);
-}
+};
 </script>
 
 <template>
@@ -36,11 +163,24 @@ function removeItem(id) {
             <h1>Your Cart</h1>
         </div>
 
-        <div v-if="cartItems.length" class="row g-4 align-items-start">
+        <div v-if="!userId" class="empty-cart text-center">
+            <p>Please log in to view your cart.</p>
+            <router-link to="/login" class="btn btn-primary">Log In</router-link>
+        </div>
+
+        <div v-else-if="loading" class="empty-cart text-center">
+            <p class="mb-0">Loading your loadout...</p>
+        </div>
+
+        <div v-else-if="err" class="empty-cart text-center">
+            <p class="text-danger mb-0">Error loading cart: {{ err }}</p>
+        </div>
+
+        <div v-else-if="cartItems.length" class="row g-4 align-items-start">
             <div class="col-lg-8 d-grid gap-3">
                 <article
                     v-for="item in cartItems"
-                    :key="item.id"
+                    :key="item.cart_id"
                     class="cart-item d-flex align-items-center justify-content-between gap-3 flex-wrap flex-sm-nowrap"
                 >
                     <div class="d-flex align-items-center gap-3 flex-grow-1">
@@ -50,18 +190,18 @@ function removeItem(id) {
                         <div class="cart-title">
                             <h2>{{ item.title }}</h2>
                             <span>{{ item.platforms }}</span>
-                            <button type="button" @click="removeItem(item.id)">Remove</button>
+                            <button type="button" @click="removeItem(item)">Remove</button>
                         </div>
                     </div>
 
                     <div class="d-flex align-items-center gap-4 ms-auto">
                         <div class="quantity d-flex align-items-center">
                             <button type="button" @click="updateQty(item, -1)">−</button>
-                            <span>{{ item.qty }}</span>
+                            <span>{{ item.quantity }}</span>
                             <button type="button" @click="updateQty(item, 1)">+</button>
                         </div>
 
-                        <strong class="item-price text-end">RM {{ (item.price * item.qty).toFixed(2) }}</strong>
+                        <strong class="item-price text-end">RM {{ (item.price * item.quantity).toFixed(2) }}</strong>
                     </div>
                 </article>
             </div>
@@ -87,9 +227,9 @@ function removeItem(id) {
                         <strong>RM {{ total.toFixed(2) }}</strong>
                     </div>
 
-                    <router-link to="/checkout" class="btn btn-primary w-100">
+                    <button type="button" class="btn btn-primary w-100" @click="proceedToCheckout">
                         Proceed to Payment
-                    </router-link>
+                    </button>
 
                     <p class="text-center mb-0">Encrypted and secure checkout</p>
                 </div>

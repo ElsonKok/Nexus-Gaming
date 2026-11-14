@@ -81,7 +81,8 @@
                                 type="button"
                                 class="heart"
                                 :class="{ active: game.liked }"
-                                @click="game.liked = !game.liked"
+                                :disabled="game.togglingFav"
+                                @click="toggleFavourite(game)"
                             >
                                 {{ game.liked ? '♥' : '♡' }}
                             </button>
@@ -138,6 +139,7 @@ export default {
     },
     data() {
         return {
+            currentUser: null,
             genres: [
                 { label: 'All', value: '' },
                 { label: 'Battle Royale', value: 'battle-royale' },
@@ -168,9 +170,18 @@ export default {
         };
     },
     mounted() {
+        this.loadUser();
         this.readData();
     },
     computed: {
+        activeAccountId() {
+            return String(
+                this.currentUser?.user_id ||
+                this.currentUser?.developer_id ||
+                this.currentUser?.id ||
+                ''
+            ).trim();
+        },
         filteredGames() {
             const query = this.search.trim().toLowerCase();
 
@@ -222,6 +233,15 @@ export default {
         }
     },
     methods: {
+        loadUser() {
+            try {
+                this.currentUser =
+                    JSON.parse(localStorage.getItem('nexusUser')) ||
+                    JSON.parse(localStorage.getItem('user'));
+            } catch {
+                this.currentUser = null;
+            }
+        },
         toSlug(title) {
             return String(title)
                 .toLowerCase()
@@ -249,19 +269,39 @@ export default {
             this.$router.push(`/game/${this.toSlug(game.title)}`);
         },
         readData() {
+            const baseApi = `/resources/apis.php`;
+            const uid = this.activeAccountId;
+
             this.loading = true;
             this.err = '';
 
-            fetch(`/resources/apis.php/`)
-                .then((response) => {
-                    if (!response.ok) {
-                        throw new Error(`HTTP error: ${response.status}`);
-                    }
-                    return response.json();
-                })
-                .then((data) => {
-                    this.games = data.map((row) => {
+            const gamesRequest = fetch(`${baseApi}/game`).then((response) => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error: ${response.status}`);
+                }
+                return response.json();
+            });
+
+            const favsRequest = uid
+                ? fetch(`${baseApi}/favourite/user_id/${encodeURIComponent(uid)}`)
+                      .then((r) => (r.ok ? r.json() : []))
+                      .catch(() => [])
+                : Promise.resolve([]);
+
+            Promise.all([gamesRequest, favsRequest])
+                .then(([data, favRows]) => {
+                    const favMap = new Map(
+                        (Array.isArray(favRows) ? favRows : []).map((f) => [
+                            String(f.game_id).trim(),
+                            f.fav_id
+                        ])
+                    );
+
+                    this.games = (Array.isArray(data) ? data : []).map((row) => {
                         const platformList = this.parsePlatforms(row.platform);
+                        const gid = String(row.game_id).trim();
+                        const favId = favMap.get(gid) || null;
+
                         return {
                             game_id: row.game_id,
                             title: row.title,
@@ -276,7 +316,9 @@ export default {
                             url: row.url,
                             price: Number(row.price) || 0,
                             rating: Number(row.rating) || 0,
-                            liked: false
+                            liked: Boolean(favId),
+                            favId,
+                            togglingFav: false
                         };
                     });
                 })
@@ -286,6 +328,78 @@ export default {
                 .finally(() => {
                     this.loading = false;
                 });
+        },
+        toggleFavourite(game) {
+            this.loadUser();
+            const uid = this.activeAccountId;
+
+            if (!uid) {
+                this.$router.push('/login');
+                return;
+            }
+
+            const baseApi = `/resources/apis.php`;
+            const gid = String(game.game_id).trim();
+            game.togglingFav = true;
+
+            if (game.liked && game.favId) {
+                fetch(`${baseApi}/favourite/fav_id/${encodeURIComponent(game.favId)}`, {
+                    method: 'DELETE'
+                })
+                    .then((res) => {
+                        if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+                        game.liked = false;
+                        game.favId = null;
+                        window.dispatchEvent(
+                            new CustomEvent('show-toast', {
+                                detail: { message: `Removed ${game.title} from favourites`, type: 'info' }
+                            })
+                        );
+                    })
+                    .catch((error) => {
+                        window.dispatchEvent(
+                            new CustomEvent('show-toast', {
+                                detail: { message: 'Error: ' + error.message, type: 'error' }
+                            })
+                        );
+                    })
+                    .finally(() => {
+                        game.togglingFav = false;
+                    });
+            } else {
+                fetch(`${baseApi}/favourite`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_id: uid,
+                        game_id: gid
+                    })
+                })
+                    .then((res) => {
+                        if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+                        return res.json();
+                    })
+                    .then((data) => {
+                        if (data.error) throw new Error(data.error);
+                        game.liked = true;
+                        game.favId = data.fav_id || null;
+                        window.dispatchEvent(
+                            new CustomEvent('show-toast', {
+                                detail: { message: `Saved ${game.title} to favourites`, type: 'success' }
+                            })
+                        );
+                    })
+                    .catch((error) => {
+                        window.dispatchEvent(
+                            new CustomEvent('show-toast', {
+                                detail: { message: 'Error: ' + error.message, type: 'error' }
+                            })
+                        );
+                    })
+                    .finally(() => {
+                        game.togglingFav = false;
+                    });
+            }
         },
         formatPlatforms(list) {
             return list.length >= 4 ? 'All platforms' : list.join(' · ');

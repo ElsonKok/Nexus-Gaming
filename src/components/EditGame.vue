@@ -1,112 +1,290 @@
-
-<script setup>
-import { reactive, computed } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
-import { gamesData } from '../assets/games.js';
-
-const route = useRoute();
-const router = useRouter();
-
-const gameId = Number(route.params.id);
-
-const game = gamesData.find(item => item.id === gameId);
-
-function loadCurrentUser() {
-    try {
-        return JSON.parse(localStorage.getItem('user')) || {
-            id: 1,
-            role: 'creator',
-            creatorGameIds: [1, 2]
-        };
-    } catch {
+<script>
+export default {
+    name: 'EditGame',
+    data() {
         return {
-            id: 1,
-            role: 'creator',
-            creatorGameIds: [1, 2]
+            currentUser: null,
+            game: null,
+            loading: true,
+            submitting: false,
+            errorMessage: '',
+            imagePreview: '',
+            imageFileName: '',
+            imageChanged: false,
+            isToday: false,
+            platforms: [
+                'PC',
+                'PlayStation',
+                'Xbox',
+                'Nintendo Switch'
+            ],
+            genres: [
+                'Battle Royale',
+                'Sports',
+                'Shooter',
+                'Action RPG',
+                'MMORPG',
+                'Adventure',
+                'Racing',
+                'Strategy',
+                'Simulation',
+                'Horror',
+                'Puzzle'
+            ],
+            form: {
+                title: '',
+                genre: 'Action RPG',
+                platforms: [],
+                release_date: '',
+                description: '',
+                image: null,
+                url: '',
+                price: 0,
+                rating: 0
+            }
         };
+    },
+    computed: {
+        todayDate() {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        },
+        isAllowed() {
+            if (!this.game || !this.currentUser) return false;
+
+            const role = String(this.currentUser.role || '').toLowerCase();
+            if (role === 'admin') return true;
+
+            const isCreator =
+                role === 'creator' ||
+                role === 'developer' ||
+                Boolean(this.currentUser.developer_id);
+
+            if (!isCreator) return false;
+
+            const gameDev = String(this.game.developer || '').trim().toLowerCase();
+            const devId = String(this.currentUser.developer_id || '').trim().toLowerCase();
+            const devUsername = String(this.currentUser.username || '').trim().toLowerCase();
+
+            return (
+                (devId && gameDev === devId) ||
+                (devUsername && gameDev === devUsername)
+            );
+        }
+    },
+    watch: {
+        isToday(checked) {
+            if (checked) {
+                this.form.release_date = this.todayDate;
+            }
+        },
+        '$route.params.id'() {
+            this.loadGame();
+        }
+    },
+    mounted() {
+        this.loadCurrentUser();
+        this.loadGame();
+    },
+    methods: {
+        loadCurrentUser() {
+            try {
+                this.currentUser =
+                    JSON.parse(localStorage.getItem('nexusUser')) ||
+                    JSON.parse(localStorage.getItem('user'));
+            } catch {
+                this.currentUser = null;
+            }
+        },
+        normalizePlatform(raw) {
+            const lower = raw.trim().toLowerCase();
+            if (lower === 'pc') return 'PC';
+            if (lower === 'playstation' || lower === 'ps5' || lower === 'ps4') return 'PlayStation';
+            if (lower === 'xbox') return 'Xbox';
+            if (lower.includes('switch')) return 'Nintendo Switch';
+            return raw.trim();
+        },
+        loadGame() {
+            const gameId = String(this.$route.params.id || '').trim();
+            if (!gameId) {
+                this.loading = false;
+                this.game = null;
+                return;
+            }
+
+            const baseApi = `/resources/apis.php`;
+            this.loading = true;
+            this.errorMessage = '';
+
+            fetch(`${baseApi}/game/game_id/${encodeURIComponent(gameId)}`)
+                .then((res) => {
+                    if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+                    return res.json();
+                })
+                .then((rows) => {
+                    const row = Array.isArray(rows) ? rows[0] : rows;
+                    if (!row || !row.game_id) {
+                        this.game = null;
+                        return;
+                    }
+
+                    this.game = row;
+                    const parsedPlatforms = String(row.platform || '')
+                        .split(',')
+                        .map((p) => this.normalizePlatform(p))
+                        .filter(Boolean);
+
+                    // Ensure custom genres from DB remain selectable in dropdown
+                    if (row.genre && !this.genres.includes(row.genre)) {
+                        this.genres.unshift(row.genre);
+                    }
+
+                    this.form = {
+                        title: row.title || '',
+                        genre: row.genre || 'Action RPG',
+                        platforms: parsedPlatforms,
+                        release_date: row.release_date || '',
+                        description: row.description || '',
+                        image: row.image || null,
+                        url: row.url || '',
+                        price: Number(row.price) || 0,
+                        rating: Number(row.rating) || 0
+                    };
+
+                    this.isToday = row.release_date === this.todayDate;
+                    this.imagePreview = row.image || '';
+                    this.imageFileName = row.image ? 'Current saved image' : '';
+                    this.imageChanged = false;
+                })
+                .catch((error) => {
+                    this.errorMessage = 'Failed to load game: ' + error.message;
+                })
+                .finally(() => {
+                    this.loading = false;
+                });
+        },
+        handleImageUpload(event) {
+            this.errorMessage = '';
+            const file = event.target.files?.[0];
+            if (!file) return;
+
+            if (!file.type.startsWith('image/')) {
+                this.errorMessage = 'Please select a valid image file (PNG, JPG, WEBP).';
+                event.target.value = '';
+                return;
+            }
+
+            const maxBytes = 5 * 1024 * 1024; // 5 MB
+            if (file.size > maxBytes) {
+                this.errorMessage = 'Image must be smaller than 5 MB.';
+                event.target.value = '';
+                return;
+            }
+
+            this.imageFileName = file.name;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const dataUrl = e.target?.result || '';
+                this.imagePreview = dataUrl;
+                this.form.image = dataUrl;
+                this.imageChanged = true;
+            };
+            reader.onerror = () => {
+                this.errorMessage = 'Failed to read the selected image file.';
+            };
+            reader.readAsDataURL(file);
+        },
+        clearImage() {
+            this.form.image = null;
+            this.imagePreview = '';
+            this.imageFileName = '';
+            this.imageChanged = true;
+            if (this.$refs.imageInput) {
+                this.$refs.imageInput.value = '';
+            }
+        },
+        updateGame() {
+            if (!this.game || !this.isAllowed) return;
+            this.errorMessage = '';
+
+            if (!this.form.platforms.length) {
+                this.errorMessage = 'Please select at least one platform.';
+                return;
+            }
+
+            const releaseDate = this.isToday ? this.todayDate : this.form.release_date;
+            if (!releaseDate) {
+                this.errorMessage = 'Please choose a release date or check "Release date is Today".';
+                return;
+            }
+
+            const payload = {
+                title: this.form.title.trim(),
+                genre: this.form.genre,
+                platform: this.form.platforms.join(', '),
+                release_date: releaseDate,
+                description: this.form.description.trim(),
+                url: this.form.url.trim(),
+                price: Number(this.form.price) || 0,
+                rating: Number(this.form.rating) || 0
+            };
+
+            if (this.imageChanged) {
+                payload.image = this.form.image || null;
+            }
+
+            const baseApi = `/resources/apis.php`;
+            this.submitting = true;
+
+            fetch(`${baseApi}/game/game_id/${encodeURIComponent(this.game.game_id)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+                .then((res) => {
+                    if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+                    return res.json();
+                })
+                .then((data) => {
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+
+                    sessionStorage.removeItem('selectedGame');
+                    window.dispatchEvent(
+                        new CustomEvent('show-toast', {
+                            detail: { message: `${payload.title} updated successfully!`, type: 'success' }
+                        })
+                    );
+                    this.$router.push('/profile');
+                })
+                .catch((error) => {
+                    this.errorMessage = 'Failed to update game: ' + error.message;
+                })
+                .finally(() => {
+                    this.submitting = false;
+                });
+        },
+        cancel() {
+            this.$router.push('/profile');
+        }
     }
-}
-
-const currentUser = loadCurrentUser();
-
-const isAllowed = computed(() => {
-    if (!game) return false;
-
-    if (currentUser.role === 'admin') return true;
-
-    return currentUser.role === 'creator' &&
-        (
-            game.creatorId === currentUser.id ||
-            (currentUser.creatorGameIds || []).includes(game.id)
-        );
-});
-
-const platforms = [
-    'pc',
-    'playstation',
-    'xbox',
-    'switch'
-];
-
-const genres = [
-    'action',
-    'adventure',
-    'racing',
-    'sci-fi',
-    'rpg',
-    'strategy',
-    'simulation',
-    'sports',
-    'horror',
-    'puzzle'
-];
-
-const form = reactive({
-    title: game?.title || '',
-    genre: game?.genre || 'action',
-    platforms: [...(game?.platforms || [])],
-    rating: game?.rating ?? 0,
-    year: game?.year ?? new Date().getFullYear(),
-    price: game?.price ?? 0,
-    releaseDate: game?.releaseDate || '',
-    img: game?.img || '',
-    tagline: game?.tagline || '',
-    description: game?.description || ''
-});
-
-const errorMessage = reactive({
-    text: ''
-});
-
-function updateGame() {
-    if (!game || !isAllowed.value) return;
-
-    if (!form.platforms.length) {
-        errorMessage.text = 'Please select at least one platform.';
-        return;
-    }
-
-    Object.assign(game, {
-        ...form,
-        platforms: [...form.platforms],
-        year: new Date(form.releaseDate).getFullYear()
-    });
-
-    router.push('/profile');
-}
-
-function cancel() {
-    router.push('/profile');
-}
+};
 </script>
 
 <template>
     <main class="game-form-page">
-
         <div class="container">
+            <div v-if="loading" class="not-found">
+                <span>CREATOR STUDIO</span>
+                <h1>Loading Game...</h1>
+                <p>Fetching game record from Nexus database.</p>
+            </div>
 
-            <template v-if="!game || !isAllowed">
-
+            <template v-else-if="!game || !isAllowed">
                 <div class="not-found">
                     <span>ACCESS DENIED</span>
                     <h1>Game Not Available</h1>
@@ -115,15 +293,13 @@ function cancel() {
                         permission to edit it.
                     </p>
 
-                    <button @click="cancel">
+                    <button type="button" @click="cancel">
                         Back to Profile
                     </button>
                 </div>
-
             </template>
 
             <template v-else>
-
                 <div class="page-heading">
                     <span class="eyebrow">CREATOR STUDIO</span>
                     <h1>Edit Game</h1>
@@ -134,27 +310,23 @@ function cancel() {
                     class="game-form-card"
                     @submit.prevent="updateGame"
                 >
-
                     <div class="form-section">
                         <h2>Basic Information</h2>
 
                         <div class="form-group">
                             <label>Game Title *</label>
-
                             <input
                                 v-model="form.title"
                                 type="text"
-                                maxlength="100"
+                                maxlength="255"
                                 required
                             />
                         </div>
 
                         <div class="row g-3">
-
                             <div class="col-md-6">
                                 <div class="form-group">
                                     <label>Genre *</label>
-
                                     <select v-model="form.genre" required>
                                         <option
                                             v-for="genre in genres"
@@ -170,7 +342,6 @@ function cancel() {
                             <div class="col-md-6">
                                 <div class="form-group">
                                     <label>Price (RM) *</label>
-
                                     <input
                                         v-model.number="form.price"
                                         type="number"
@@ -180,14 +351,11 @@ function cancel() {
                                     />
                                 </div>
                             </div>
-
                         </div>
 
                         <div class="form-group">
                             <label>Supported Platforms *</label>
-
                             <div class="platform-options">
-
                                 <label
                                     v-for="platform in platforms"
                                     :key="platform"
@@ -198,10 +366,8 @@ function cancel() {
                                         type="checkbox"
                                         :value="platform"
                                     />
-
                                     {{ platform }}
                                 </label>
-
                             </div>
                         </div>
                     </div>
@@ -210,15 +376,21 @@ function cancel() {
                         <h2>Game Details</h2>
 
                         <div class="row g-3">
-
                             <div class="col-md-6">
                                 <div class="form-group">
-                                    <label>Release Date *</label>
+                                    <div class="d-flex align-items-center justify-content-between">
+                                        <label class="mb-0">Release Date *</label>
+                                        <label class="today-check">
+                                            <input v-model="isToday" type="checkbox" />
+                                            <span>Release date is Today</span>
+                                        </label>
+                                    </div>
 
                                     <input
-                                        v-model="form.releaseDate"
+                                        v-model="form.release_date"
                                         type="date"
-                                        required
+                                        :disabled="isToday"
+                                        :required="!isToday"
                                     />
                                 </div>
                             </div>
@@ -226,7 +398,6 @@ function cancel() {
                             <div class="col-md-6">
                                 <div class="form-group">
                                     <label>Rating (0 - 5)</label>
-
                                     <input
                                         v-model.number="form.rating"
                                         type="number"
@@ -236,33 +407,41 @@ function cancel() {
                                     />
                                 </div>
                             </div>
-
                         </div>
 
                         <div class="form-group">
-                            <label>Thumbnail Image URL</label>
-
+                            <label>Game Cover Image (Saved to Database)</label>
                             <input
-                                v-model="form.img"
-                                type="url"
-                                placeholder="https://example.com/game-image.jpg"
+                                ref="imageInput"
+                                type="file"
+                                accept="image/*"
+                                class="file-input"
+                                @change="handleImageUpload"
                             />
+
+                            <div v-if="imagePreview" class="image-preview-box">
+                                <img :src="imagePreview" alt="Selected game cover preview" />
+                                <div class="preview-meta">
+                                    <span>{{ imageFileName }}</span>
+                                    <button type="button" class="remove-img-btn" @click="clearImage">
+                                        Remove
+                                    </button>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="form-group">
-                            <label>Tagline *</label>
-
+                            <label>Official Website URL *</label>
                             <input
-                                v-model="form.tagline"
-                                type="text"
-                                maxlength="150"
+                                v-model="form.url"
+                                type="url"
+                                placeholder="https://example.com/your-game"
                                 required
                             />
                         </div>
 
                         <div class="form-group">
                             <label>Description *</label>
-
                             <textarea
                                 v-model="form.description"
                                 rows="5"
@@ -271,38 +450,35 @@ function cancel() {
                         </div>
                     </div>
 
-                    <p v-if="errorMessage.text" class="error-message">
-                        {{ errorMessage.text }}
+                    <p v-if="errorMessage" class="error-message">
+                        {{ errorMessage }}
                     </p>
 
                     <div class="form-actions">
-
                         <button
                             type="button"
                             class="cancel-btn"
+                            :disabled="submitting"
                             @click="cancel"
                         >
                             Cancel
                         </button>
 
-                        <button type="submit" class="submit-btn">
-                            Save Changes
+                        <button
+                            type="submit"
+                            class="submit-btn"
+                            :disabled="submitting"
+                        >
+                            {{ submitting ? 'Saving...' : 'Save Changes' }}
                         </button>
-
                     </div>
-
                 </form>
-
             </template>
-
         </div>
-
     </main>
 </template>
 
 <style scoped>
-/* Same styling as AddGame.vue */
-
 .game-form-page {
     min-height: 100vh;
     padding: 60px 20px;
@@ -366,7 +542,7 @@ function cancel() {
     font-weight: 700;
 }
 
-.form-group input,
+.form-group input:not([type="checkbox"]),
 .form-group select,
 .form-group textarea {
     width: 100%;
@@ -377,6 +553,11 @@ function cancel() {
     outline: none;
 }
 
+.form-group input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 .form-group input:focus,
 .form-group select:focus,
 .form-group textarea:focus {
@@ -385,6 +566,64 @@ function cancel() {
 
 .form-group select option {
     background: #0c0e13;
+}
+
+.today-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--cyan);
+    cursor: pointer;
+}
+
+.today-check input[type="checkbox"] {
+    width: auto;
+    accent-color: var(--cyan);
+    cursor: pointer;
+}
+
+.file-input {
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.image-preview-box {
+    border: 1px solid var(--line);
+    background: #0c0e13;
+    padding: 12px;
+    display: grid;
+    gap: 10px;
+}
+
+.image-preview-box img {
+    width: 100%;
+    max-height: 240px;
+    object-fit: cover;
+    border: 1px solid var(--line);
+}
+
+.preview-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--muted);
+}
+
+.remove-img-btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: #ff6969;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.remove-img-btn:hover {
+    border-color: #ff6969;
 }
 
 .platform-options {
@@ -401,7 +640,6 @@ function cancel() {
     background: #ffffff0b;
     border: 1px solid var(--line);
     cursor: pointer;
-    text-transform: capitalize;
 }
 
 .platform-option input {
@@ -420,6 +658,7 @@ function cancel() {
     font-size: 12px;
     font-weight: 700;
     border: 1px solid var(--line);
+    cursor: pointer;
 }
 
 .cancel-btn {
@@ -431,6 +670,12 @@ function cancel() {
     background: var(--cyan);
     color: #061014;
     border-color: var(--cyan);
+}
+
+.submit-btn:disabled,
+.cancel-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
 }
 
 .error-message {
@@ -458,6 +703,7 @@ function cancel() {
     background: var(--cyan);
     border: 0;
     font-weight: 700;
+    cursor: pointer;
 }
 
 @media (max-width: 576px) {

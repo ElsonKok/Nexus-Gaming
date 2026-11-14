@@ -1,93 +1,352 @@
+<script>
+export default {
+    name: 'EditProfile',
+    data() {
+        return {
+            profile: null,
+            username: '',
+            email: '',
+            avatarPreview: '',
+            avatarData: '',
+            avatarChanged: false,
+            currentPassword: '',
+            newPassword: '',
+            confirmPassword: '',
+            showPasswords: false,
+            saving: false,
+            errorMessage: '',
+            successMessage: ''
+        };
+    },
+    computed: {
+        isDeveloper() {
+            const role = String(this.profile?.role || '').toLowerCase();
+            return role === 'creator' || role === 'developer' || Boolean(this.profile?.developer_id);
+        },
+        displayRole() {
+            if (this.isDeveloper) return 'CREATOR';
+            return String(this.profile?.role || 'USER').toUpperCase();
+        },
+        formattedAvatar() {
+            const raw = String(this.avatarPreview || '').trim();
+            if (!raw) return '';
+            if (raw.startsWith('data:image/') || raw.startsWith('http://') || raw.startsWith('https://')) {
+                return raw;
+            }
+            return `data:image/jpeg;base64,${raw}`;
+        }
+    },
+    mounted() {
+        this.loadProfile();
+    },
+    methods: {
+        loadProfile() {
+            try {
+                this.profile =
+                    JSON.parse(localStorage.getItem('nexusUser')) ||
+                    JSON.parse(localStorage.getItem('user')) ||
+                    null;
+            } catch {
+                this.profile = null;
+            }
 
-<script setup>
-import { ref } from 'vue';
-import { useRouter } from 'vue-router';
+            if (this.profile) {
+                this.username = this.profile.username || this.profile.displayName || '';
+                this.email = this.profile.email || '';
+                this.avatarPreview = this.profile.avatar || '';
+                this.avatarData = this.profile.avatar || '';
+                this.avatarChanged = false;
+                this.fetchLatestAccount();
+            }
+        },
+        async fetchLatestAccount() {
+            const baseApi = `/resources/apis.php`;
+            const table = this.isDeveloper ? 'developer' : 'user';
+            const idCol = this.isDeveloper ? 'developer_id' : 'user_id';
+            const accountId = String(
+                this.isDeveloper
+                    ? this.profile.developer_id
+                    : (this.profile.user_id || this.profile.id || '')
+            ).trim();
 
-const router = useRouter();
+            if (!accountId) return;
 
-const demoProfile = {
-    id: 1,
-    username: 'Alex Morgan',
-    email: 'alex@nexus.com',
-    role: 'creator',
-    joinedDate: '2024-01-15',
-    purchasedGameIds: [1],
-    creatorGameIds: [1, 2]
+            try {
+                const res = await fetch(
+                    `${baseApi}/${table}/${idCol}/${encodeURIComponent(accountId)}`
+                );
+                if (!res.ok) return;
+                const rows = await res.json();
+                const dbUser = Array.isArray(rows) ? rows[0] : rows;
+                if (dbUser && !this.avatarChanged && dbUser.avatar) {
+                    this.avatarPreview = dbUser.avatar;
+                    this.avatarData = dbUser.avatar;
+                }
+            } catch {
+                // Keep cached localStorage avatar on network error
+            }
+        },
+        triggerAvatarPicker() {
+            if (this.$refs.avatarInput) {
+                this.$refs.avatarInput.click();
+            }
+        },
+        handleAvatarUpload(event) {
+            this.errorMessage = '';
+            const file = event.target.files?.[0];
+            if (!file) return;
+
+            if (!file.type.startsWith('image/')) {
+                this.errorMessage = 'Please select a valid image file (PNG, JPG, WEBP).';
+                event.target.value = '';
+                return;
+            }
+
+            const maxBytes = 2 * 1024 * 1024; // 2 MB
+            if (file.size > maxBytes) {
+                this.errorMessage = 'Avatar image must be smaller than 2 MB.';
+                event.target.value = '';
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const dataUrl = e.target?.result || '';
+                this.avatarPreview = dataUrl;
+                this.avatarData = dataUrl;
+                this.avatarChanged = true;
+            };
+            reader.onerror = () => {
+                this.errorMessage = 'Failed to read the selected avatar image.';
+            };
+            reader.readAsDataURL(file);
+        },
+        removeAvatar() {
+            this.avatarPreview = '';
+            this.avatarData = '';
+            this.avatarChanged = true;
+            if (this.$refs.avatarInput) {
+                this.$refs.avatarInput.value = '';
+            }
+        },
+        async saveProfile() {
+            this.errorMessage = '';
+            this.successMessage = '';
+
+            if (!this.profile) {
+                this.$router.push('/login');
+                return;
+            }
+
+            if (!this.username.trim() || !this.email.trim()) {
+                this.errorMessage = 'Please complete all required fields.';
+                return;
+            }
+
+            const wantsPasswordChange =
+                Boolean(this.currentPassword) ||
+                Boolean(this.newPassword) ||
+                Boolean(this.confirmPassword);
+
+            if (wantsPasswordChange) {
+                if (!this.currentPassword || !this.newPassword || !this.confirmPassword) {
+                    this.errorMessage = 'Please fill in current, new, and confirm password fields.';
+                    return;
+                }
+                if (this.newPassword.length < 6) {
+                    this.errorMessage = 'New password must be at least 6 characters.';
+                    return;
+                }
+                if (this.newPassword !== this.confirmPassword) {
+                    this.errorMessage = 'New password and confirmation do not match.';
+                    return;
+                }
+                if (this.currentPassword === this.newPassword) {
+                    this.errorMessage = 'New password must be different from your current password.';
+                    return;
+                }
+            }
+
+            const baseApi = `/resources/apis.php`;
+            const table = this.isDeveloper ? 'developer' : 'user';
+            const idCol = this.isDeveloper ? 'developer_id' : 'user_id';
+            const accountId = String(
+                this.isDeveloper
+                    ? this.profile.developer_id
+                    : (this.profile.user_id || this.profile.id || '')
+            ).trim();
+
+            if (!accountId) {
+                this.errorMessage = 'Unable to identify your account ID. Please log in again.';
+                return;
+            }
+
+            this.saving = true;
+
+            try {
+                if (wantsPasswordChange) {
+                    const checkRes = await fetch(
+                        `${baseApi}/${table}/${idCol}/${encodeURIComponent(accountId)}`
+                    );
+                    if (!checkRes.ok) {
+                        throw new Error(`HTTP error: ${checkRes.status}`);
+                    }
+                    const rows = await checkRes.json();
+                    const dbUser = Array.isArray(rows) ? rows[0] : rows;
+
+                    if (!dbUser || String(dbUser.password ?? '') !== this.currentPassword) {
+                        this.errorMessage = 'Current password is incorrect.';
+                        this.saving = false;
+                        return;
+                    }
+                }
+
+                const payload = {
+                    username: this.username.trim(),
+                    email: this.email.trim()
+                };
+
+                if (this.avatarChanged) {
+                    payload.avatar = this.avatarData;
+                }
+
+                if (wantsPasswordChange) {
+                    payload.password = this.newPassword;
+                }
+
+                const updateRes = await fetch(
+                    `${baseApi}/${table}/${idCol}/${encodeURIComponent(accountId)}`,
+                    {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    }
+                );
+
+                if (!updateRes.ok) {
+                    throw new Error(`HTTP error: ${updateRes.status}`);
+                }
+
+                const data = await updateRes.json();
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                const updatedProfile = {
+                    ...this.profile,
+                    username: payload.username,
+                    email: payload.email,
+                    avatar: this.avatarChanged ? this.avatarData : (this.profile.avatar || '')
+                };
+
+                if (localStorage.getItem('nexusUser')) {
+                    localStorage.setItem('nexusUser', JSON.stringify(updatedProfile));
+                }
+                if (localStorage.getItem('user')) {
+                    localStorage.setItem('user', JSON.stringify(updatedProfile));
+                }
+                window.dispatchEvent(new Event('auth-changed'));
+
+                this.currentPassword = '';
+                this.newPassword = '';
+                this.confirmPassword = '';
+                this.avatarChanged = false;
+
+                this.successMessage = wantsPasswordChange
+                    ? 'Profile and password updated successfully!'
+                    : 'Profile updated successfully!';
+
+                window.dispatchEvent(
+                    new CustomEvent('show-toast', {
+                        detail: { message: this.successMessage, type: 'success' }
+                    })
+                );
+
+                setTimeout(() => {
+                    this.$router.push('/profile');
+                }, 700);
+            } catch (err) {
+                this.errorMessage = 'Could not update profile: ' + err.message;
+            } finally {
+                this.saving = false;
+            }
+        },
+        cancelEdit() {
+            this.$router.push('/profile');
+        }
+    }
 };
-
-function loadProfile() {
-    try {
-        return JSON.parse(localStorage.getItem('user')) || demoProfile;
-    } catch {
-        return demoProfile;
-    }
-}
-
-const profile = ref(loadProfile());
-
-const username = ref(profile.value.username || profile.value.displayName || '');
-const email = ref(profile.value.email || '');
-const message = ref('');
-
-function saveProfile() {
-    if (!username.value.trim() || !email.value.trim()) {
-        message.value = 'Please complete all required fields.';
-        return;
-    }
-
-    const updatedProfile = {
-        ...profile.value,
-        username: username.value.trim(),
-        email: email.value.trim()
-    };
-
-    localStorage.setItem('user', JSON.stringify(updatedProfile));
-
-    message.value = 'Profile updated successfully!';
-
-    setTimeout(() => {
-        router.push('/profile');
-    }, 700);
-}
-
-function cancelEdit() {
-    router.push('/profile');
-}
 </script>
 
 <template>
     <main class="edit-profile-page">
-
         <div class="container">
-
             <div class="page-heading">
                 <span class="eyebrow">ACCOUNT SETTINGS</span>
                 <h1>Edit Profile</h1>
-                <p>Update your personal information on Nexus.</p>
+                <p>Update your avatar, personal information, and password on Nexus.</p>
             </div>
 
-            <div class="edit-profile-card">
+            <div v-if="!profile" class="edit-profile-card text-center">
+                <p class="mb-3">Please sign in to edit your profile.</p>
+                <router-link to="/login" class="save-btn text-decoration-none d-inline-block">
+                    Go to Login
+                </router-link>
+            </div>
 
+            <div v-else class="edit-profile-card">
                 <div class="profile-preview">
-                    <div class="avatar">
-                        {{ username.charAt(0).toUpperCase() || 'U' }}
+                    <div
+                        class="avatar"
+                        title="Click to change avatar"
+                        @click="triggerAvatarPicker"
+                    >
+                        <img
+                            v-if="formattedAvatar"
+                            :src="formattedAvatar"
+                            :alt="username || 'Avatar'"
+                        />
+                        <span v-else>{{ username.charAt(0).toUpperCase() || 'U' }}</span>
                     </div>
 
-                    <div>
+                    <div class="flex-grow-1">
                         <h3>{{ username || 'Your Name' }}</h3>
-                        <span>
-                            {{ profile.role?.toUpperCase() || 'USER' }}
-                        </span>
+                        <span class="role-tag">{{ displayRole }}</span>
+
+                        <div class="avatar-actions">
+                            <input
+                                ref="avatarInput"
+                                type="file"
+                                accept="image/*"
+                                class="d-none"
+                                @change="handleAvatarUpload"
+                            />
+                            <button
+                                type="button"
+                                class="avatar-btn"
+                                @click="triggerAvatarPicker"
+                            >
+                                {{ formattedAvatar ? 'Change Avatar' : 'Upload Avatar' }}
+                            </button>
+                            <button
+                                v-if="formattedAvatar"
+                                type="button"
+                                class="avatar-remove-btn"
+                                @click="removeAvatar"
+                            >
+                                Remove
+                            </button>
+                        </div>
                     </div>
                 </div>
 
                 <div class="form-divider"></div>
 
                 <form @submit.prevent="saveProfile">
+                    <h2 class="section-title">Profile Information</h2>
 
                     <div class="form-group">
-                        <label>Display Name</label>
-
+                        <label>Display Name *</label>
                         <input
                             v-model="username"
                             type="text"
@@ -98,8 +357,7 @@ function cancelEdit() {
                     </div>
 
                     <div class="form-group">
-                        <label>Email Address</label>
-
+                        <label>Email Address *</label>
                         <input
                             v-model="email"
                             type="email"
@@ -110,44 +368,89 @@ function cancelEdit() {
 
                     <div class="form-group">
                         <label>Account Role</label>
-
                         <input
-                            :value="profile.role || 'user'"
+                            :value="displayRole"
                             type="text"
                             disabled
                         />
-
-                        <small>
-                            Your account role cannot be changed here.
-                        </small>
+                        <small>Your account role cannot be changed here.</small>
                     </div>
 
-                    <p v-if="message" class="success-message">
-                        {{ message }}
+                    <div class="form-divider"></div>
+
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <h2 class="section-title mb-0">Change Password</h2>
+                        <label class="toggle-password">
+                            <input v-model="showPasswords" type="checkbox" />
+                            <span>Show passwords</span>
+                        </label>
+                    </div>
+                    <p class="section-hint">Leave blank if you do not want to change your password.</p>
+
+                    <div class="form-group">
+                        <label>Current Password</label>
+                        <input
+                            v-model="currentPassword"
+                            :type="showPasswords ? 'text' : 'password'"
+                            placeholder="Enter current password"
+                            autocomplete="current-password"
+                        />
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="form-group mb-0">
+                                <label>New Password</label>
+                                <input
+                                    v-model="newPassword"
+                                    :type="showPasswords ? 'text' : 'password'"
+                                    placeholder="Minimum 6 characters"
+                                    autocomplete="new-password"
+                                />
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="form-group mb-0">
+                                <label>Confirm New Password</label>
+                                <input
+                                    v-model="confirmPassword"
+                                    :type="showPasswords ? 'text' : 'password'"
+                                    placeholder="Re-enter new password"
+                                    autocomplete="new-password"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <p v-if="errorMessage" class="error-message mt-3">
+                        {{ errorMessage }}
+                    </p>
+                    <p v-if="successMessage" class="success-message mt-3">
+                        {{ successMessage }}
                     </p>
 
                     <div class="form-actions">
-
                         <button
                             type="button"
                             class="cancel-btn"
+                            :disabled="saving"
                             @click="cancelEdit"
                         >
                             Cancel
                         </button>
 
-                        <button type="submit" class="save-btn">
-                            Save Changes
+                        <button
+                            type="submit"
+                            class="save-btn"
+                            :disabled="saving"
+                        >
+                            {{ saving ? 'Saving...' : 'Save Changes' }}
                         </button>
-
                     </div>
-
                 </form>
-
             </div>
-
         </div>
-
     </main>
 </template>
 
@@ -198,33 +501,104 @@ function cancelEdit() {
 }
 
 .avatar {
-    width: 65px;
-    height: 65px;
+    width: 78px;
+    height: 78px;
     display: grid;
     place-items: center;
     border-radius: 50%;
     background: #171b26;
     border: 1px solid var(--cyan);
     color: var(--cyan);
-    font-size: 25px;
+    font-size: 28px;
     font-weight: 800;
+    overflow: hidden;
+    flex-shrink: 0;
+    cursor: pointer;
+}
+
+.avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
 }
 
 .profile-preview h3 {
     font-size: 18px;
-    margin: 0 0 5px;
+    margin: 0 0 4px;
 }
 
-.profile-preview span {
+.role-tag {
     color: var(--cyan);
     font-size: 10px;
     letter-spacing: 0.12em;
+    display: block;
+}
+
+.avatar-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.avatar-btn,
+.avatar-remove-btn {
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: 700;
+    border: 1px solid var(--line);
+    background: #0c0e13;
+    cursor: pointer;
+}
+
+.avatar-btn {
+    color: var(--cyan);
+    border-color: rgba(0, 242, 254, 0.4);
+}
+
+.avatar-btn:hover {
+    border-color: var(--cyan);
+}
+
+.avatar-remove-btn {
+    color: #ff6969;
+}
+
+.avatar-remove-btn:hover {
+    border-color: #ff6969;
 }
 
 .form-divider {
     height: 1px;
     background: var(--line);
     margin: 28px 0;
+}
+
+.section-title {
+    font-size: 16px;
+    font-weight: 800;
+    margin-bottom: 18px;
+}
+
+.section-hint {
+    color: var(--muted);
+    font-size: 12px;
+    margin-bottom: 18px;
+}
+
+.toggle-password {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--muted);
+    cursor: pointer;
+}
+
+.toggle-password input[type="checkbox"] {
+    width: auto;
+    accent-color: var(--cyan);
+    cursor: pointer;
 }
 
 .form-group {
@@ -238,7 +612,7 @@ function cancelEdit() {
     font-weight: 700;
 }
 
-.form-group input {
+.form-group input:not([type="checkbox"]) {
     width: 100%;
     padding: 13px;
     color: var(--text);
@@ -261,6 +635,11 @@ function cancelEdit() {
     font-size: 11px;
 }
 
+.error-message {
+    color: #ff6969;
+    font-size: 12px;
+}
+
 .success-message {
     color: #55f5ae;
     font-size: 12px;
@@ -279,6 +658,7 @@ function cancelEdit() {
     font-size: 12px;
     font-weight: 700;
     border: 1px solid var(--line);
+    cursor: pointer;
 }
 
 .cancel-btn {
@@ -290,6 +670,12 @@ function cancelEdit() {
     color: #061014;
     background: var(--cyan);
     border-color: var(--cyan);
+}
+
+.cancel-btn:disabled,
+.save-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
 }
 
 @media (max-width: 576px) {
