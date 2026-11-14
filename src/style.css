@@ -3,7 +3,10 @@
   --muted: #8d93a3;
   --text-h: #08060d;
   --bg: #08090d;
+  --panel: #101218;
+  --panel2: #161922;
   --cyan: #00f2fe;
+  --danger: #ff5f6d;
   --border: #e5e4e7;
   --line: #252936;
   --code-bg: #f4f3ec;
@@ -41,7 +44,9 @@
     --muted: #8d93a3;
     --text-h: #f3f4f6;
     --bg: #08090d;
+    --panel: #101218;
     --cyan: #00f2fe;
+    --danger: #ff5f6d;
     --border: #2e303a;
     --line: #252936;
     --code-bg: #1f2028;
@@ -293,6 +298,10 @@ code {
     right: 0;
     border-right-color: var(--border);
   }
+}
+
+.fs-inherit {
+  font-size: inherit !important;
 }
 
 .eyebrow {
