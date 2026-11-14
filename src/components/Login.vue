@@ -54,13 +54,11 @@
 
                         <!-- Account Role -->
                         <div v-if="mode === 'register'" class="mb-3">
-
                             <label class="d-block mb-2">
                                 Select Account Type
                             </label>
 
                             <div class="role-options">
-
                                 <label class="role-option">
                                     <input
                                         v-model="role"
@@ -86,13 +84,11 @@
                                         <small>Publish and manage your own games.</small>
                                     </div>
                                 </label>
-
                             </div>
 
                             <small class="role-note">
                                 Admin accounts require administrator approval.
                             </small>
-
                         </div>
 
                         <label class="d-grid gap-2 mb-3">
@@ -145,8 +141,9 @@
                         <p v-if="errorMessage" class="auth-error">
                             {{ errorMessage }}
                         </p>
-                        <button type="submit" class="btn btn-primary w-100">
-                            {{ mode === 'login' ? 'Enter the Nexus' : 'Create Account' }}
+
+                        <button type="submit" class="btn btn-primary w-100" :disabled="loading">
+                            {{ loading ? 'Please wait...' : (mode === 'login' ? 'Enter the Nexus' : 'Create Account') }}
                         </button>
                     </form>
 
@@ -174,80 +171,162 @@ export default {
             password: '',
             confirmPassword: '',
             remember: false,
-            errorMessage: ''
+            errorMessage: '',
+            msg: '',
+            loading: false
         };
     },
     watch: {
         '$route.query.tab'(tab) {
             this.mode = tab === 'register' ? 'register' : 'login';
+            this.errorMessage = '';
+            this.msg = '';
         }
     },
     methods: {
-        handleSubmit() {
+        async hashPassword(plainPassword) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(plainPassword);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+        },
+
+        async handleSubmit() {
             this.errorMessage = '';
+            this.msg = '';
 
-            // Get existing registered accounts
-            const users = JSON.parse(
-                localStorage.getItem('nexusUsers') || '[]'
-            );
-
-            // REGISTRATION
             if (this.mode === 'register') {
                 if (this.password !== this.confirmPassword) {
                     this.errorMessage = 'Passwords do not match.';
                     return;
                 }
-
-                // Check duplicate email
-                const existingUser = users.find(
-                    (user) => user.email === this.email
-                );
-
-                if (existingUser) {
-                    this.errorMessage = 'This email is already registered.';
-                    return;
-                }
-
-                const newUser = {
-                    id: Date.now(),
-                    username: this.username,
-                    email: this.email,
-                    password: this.password,
-                    role: this.role,
-                    joinedDate: new Date().toISOString().slice(0, 10),
-                    purchasedGameIds: [],
-                    creatorGameIds: []
-                };
-
-                // Save registered account
-                users.push(newUser);
-                localStorage.setItem('nexusUsers', JSON.stringify(users));
-
-                // Automatically log in after registration
-                const { password: savedPassword, ...userSession } = newUser;
-                saveUser(userSession);
-
-                this.$router.push('/profile');
+                const encodedPassword = await this.hashPassword(this.password);
+                this.registerAccount(this.username, this.email, encodedPassword, this.role);
+            } else {
+                const encodedPassword = await this.hashPassword(this.password);
+                this.loginAccount(this.email, encodedPassword);
             }
-            // LOGIN
-            else {
-                const matchedUser = users.find(
-                    (user) =>
-                        user.email === this.email &&
-                        user.password === this.password
-                );
+        },
 
-                if (!matchedUser) {
-                    this.errorMessage = 'Invalid email or password.';
-                    return;
-                }
+        registerAccount(uname, mail, encodedPwd, selectedRole) {
+            const baseApi = `/resources/apis.php`;
+            const isDeveloper = selectedRole === 'creator';
+            const targetTable = isDeveloper ? 'developer' : 'user';
+            const self = this;
+            this.loading = true;
 
-                // Save login session without password
-                const { password: savedPassword, ...userSession } = matchedUser;
-                saveUser(userSession);
+            Promise.all([
+                fetch(`${baseApi}/user/email/${encodeURIComponent(mail)}`).then((r) => r.json()),
+                fetch(`${baseApi}/developer/email/${encodeURIComponent(mail)}`).then((r) => r.json())
+            ])
+                .then(([existingUsers, existingDevs]) => {
+                    const emailTaken =
+                        (Array.isArray(existingUsers) && existingUsers.length > 0) ||
+                        (Array.isArray(existingDevs) && existingDevs.length > 0);
 
-                this.$router.push('/profile');
-            }
+                    if (emailTaken) {
+                        self.errorMessage = 'This email is already registered.';
+                        self.loading = false;
+                        return null;
+                    }
+
+                    // ID is omitted so apis.php auto-generates U0001 / D0001
+                    const payload = isDeveloper
+                        ? {
+                              username: uname,
+                              email: mail,
+                              passwd: encodedPwd
+                          }
+                        : {
+                              username: uname,
+                              email: mail,
+                              passwd: encodedPwd,
+                              avatar: ''
+                          };
+
+                    return fetch(`${baseApi}/${targetTable}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(payload)
+                    })
+                        .then((res) => {
+                            if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+                            return res.json();
+                        })
+                        .then((data) => {
+                            if (data.error) {
+                                self.errorMessage = data.error;
+                                return;
+                            }
+
+                            const generatedId = isDeveloper ? data.developer_id : data.user_id;
+                            self.msg = 'Account created successfully.';
+
+                            const { passwd, avatar, ...userSession } = payload;
+                            userSession.id = generatedId;
+                            if (isDeveloper) {
+                                userSession.developer_id = generatedId;
+                                userSession.role = 'creator';
+                            } else {
+                                userSession.user_id = generatedId;
+                                userSession.role = 'user';
+                            }
+
+                            saveUser(userSession);
+                            self.$router.push('/profile');
+                        });
+                })
+                .catch((error) => {
+                    self.errorMessage = 'There was an error! ' + error.message;
+                })
+                .finally(() => {
+                    self.loading = false;
+                });
+        },
+
+        loginAccount(mail, encodedPwd) {
+            const baseApi = `/resources/apis.php`;
+            const self = this;
+            this.loading = true;
+
+            Promise.all([
+                fetch(`${baseApi}/user/email/${encodeURIComponent(mail)}`).then((r) => r.json()),
+                fetch(`${baseApi}/developer/email/${encodeURIComponent(mail)}`).then((r) => r.json())
+            ])
+                .then(([users, devs]) => {
+                    const matchedUser = Array.isArray(users)
+                        ? users.find((u) => u.email === mail && u.passwd === encodedPwd)
+                        : null;
+
+                    const matchedDev = Array.isArray(devs)
+                        ? devs.find((d) => d.email === mail && d.passwd === encodedPwd)
+                        : null;
+
+                    if (matchedUser) {
+                        const { passwd, avatar, ...userSession } = matchedUser;
+                        userSession.id = matchedUser.user_id;
+                        userSession.role = 'user';
+                        saveUser(userSession);
+                        self.$router.push('/profile');
+                    } else if (matchedDev) {
+                        const { passwd, ...devSession } = matchedDev;
+                        devSession.id = matchedDev.developer_id;
+                        devSession.role = 'creator';
+                        saveUser(devSession);
+                        self.$router.push('/profile');
+                    } else {
+                        self.errorMessage = 'Invalid email or password.';
+                    }
+                })
+                .catch((error) => {
+                    self.errorMessage = 'There was an error! ' + error.message;
+                })
+                .finally(() => {
+                    self.loading = false;
+                });
         }
     }
 };

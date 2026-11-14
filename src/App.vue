@@ -1,106 +1,98 @@
-<script setup>
-import { useRoute, useRouter } from 'vue-router';
-import { currentUser, logoutUser } from './api/auth';
-
-const route = useRoute();
-const router = useRouter();
-
-function handleLogout() {
-    logoutUser();
-    router.push('/');
-}
-</script>
-
 <template>
-    <nav v-if="!route.meta.hideNav" class="navbar cus-navbar">
-
-        <router-link to="/">
+    <nav v-if="!$route.meta?.hideNav" class="navbar cus-navbar sticky-top">
+        <!-- Brand -->
+        <router-link to="/" class="brand-link d-flex align-items-center">
             <img
                 src="/logo.png"
-                alt="Logo"
+                alt="Nexus"
                 class="logo"
                 width="120"
                 height="50"
             />
         </router-link>
 
-        <div class="d-flex gap-3">
-            <router-link to="/" class="nav-link nav-links">
+        <!-- Primary Links -->
+        <div class="nav-center d-flex align-items-center gap-4">
+            <router-link to="/" class="nav-link nav-links" exact-active-class="active">
                 Home
             </router-link>
 
-            <router-link to="/game" class="nav-link nav-links">
-                Game
+            <router-link to="/game" class="nav-link nav-links" active-class="active">
+                Games
             </router-link>
 
-            <router-link to="/favourite" class="nav-link nav-links">
-                Favourite
+            <router-link to="/favourite" class="nav-link nav-links" active-class="active">
+                Favourites
             </router-link>
 
-            <router-link to="/about" class="nav-link nav-links">
+            <router-link to="/about" class="nav-link nav-links" active-class="active">
                 About
             </router-link>
         </div>
 
-        <!-- Guest Navigation -->
+        <!-- Guest Actions -->
         <div v-if="!currentUser" class="d-flex align-items-center gap-3">
-
             <router-link
                 to="/login"
-                class="text-decoration-none text-white login"
+                class="text-decoration-none login-btn"
             >
-                Login
+                Log in
             </router-link>
 
             <router-link
                 :to="{ path: '/login', query: { tab: 'register' } }"
-                class="text-decoration-none register"
+                class="text-decoration-none cta-btn"
             >
-                Register
+                Join Nexus
             </router-link>
-
         </div>
 
-        <!-- Logged-in Navigation -->
+        <!-- Authenticated Actions -->
         <div v-else class="d-flex align-items-center gap-3">
-
-            <!-- Creator -->
+            <!-- Creator Quick Action -->
             <router-link
                 v-if="currentUser.role === 'creator'"
                 to="/games/add"
-                class="text-decoration-none register"
+                class="text-decoration-none creator-btn"
             >
-                + Add Content
+                + Publish Game
             </router-link>
 
-            <!-- Admin -->
+            <!-- Admin Quick Action -->
             <router-link
                 v-if="currentUser.role === 'admin'"
                 to="/admin"
-                class="text-decoration-none register"
+                class="text-decoration-none cta-btn"
             >
-                Admin Dashboard
+                Admin Panel
             </router-link>
 
+            <!-- Cart Icon (Players) -->
             <router-link
+                v-if="currentUser.role !== 'creator'"
                 to="/cart"
-                class="icon-link"
+                class="icon-link text-decoration-none"
+                title="Shopping Cart"
             >
                 <img
                     src="/cart.svg"
                     alt="Cart"
-                    width="19"
-                    height="19"
+                    width="18"
+                    height="18"
                 />
+                <span v-if="cartCount > 0" class="cart-badge">{{ cartCount }}</span>
             </router-link>
 
+            <!-- Profile Pill -->
             <router-link
                 to="/profile"
-                class="text-decoration-none text-white"
+                class="profile-pill text-decoration-none"
             >
-                {{ currentUser.username }}
+                <span class="pill-avatar">{{ userInitials }}</span>
+                <span class="pill-name">{{ currentUser.username || currentUser.email }}</span>
             </router-link>
 
+            <!-- Logout -->
             <button
                 type="button"
                 class="logout-btn"
@@ -108,41 +100,198 @@ function handleLogout() {
             >
                 Logout
             </button>
-
         </div>
-
     </nav>
 
     <router-view></router-view>
 </template>
 
+<script>
+export default {
+    name: 'App',
+    data() {
+        return {
+            currentUser: null,
+            cartCount: 0
+        };
+    },
+    computed: {
+        userInitials() {
+            const name =
+                this.currentUser?.username ||
+                this.currentUser?.email ||
+                'P';
 
-<style scope>
-nav {
-  border-bottom: 1px solid #ffffff12;
+            return name
+                .split(' ')
+                .map((w) => w[0])
+                .join('')
+                .slice(0, 2)
+                .toUpperCase();
+        }
+    },
+    watch: {
+        '$route.fullPath'() {
+            this.handleAuthChange();
+        }
+    },
+    mounted() {
+        this.handleAuthChange();
+        window.addEventListener('auth-changed', this.handleAuthChange);
+        window.addEventListener('storage', this.handleAuthChange);
+        window.addEventListener('cart-changed', this.fetchCartCount);
+    },
+    beforeUnmount() {
+        window.removeEventListener('auth-changed', this.handleAuthChange);
+        window.removeEventListener('storage', this.handleAuthChange);
+        window.removeEventListener('cart-changed', this.fetchCartCount);
+    },
+    methods: {
+        syncAuth() {
+            try {
+                this.currentUser =
+                    JSON.parse(localStorage.getItem('nexusUser')) ||
+                    JSON.parse(localStorage.getItem('user'));
+            } catch {
+                this.currentUser = null;
+            }
+        },
+        fetchCartCount() {
+            const uid = this.currentUser?.user_id || this.currentUser?.id;
+            if (!uid || this.currentUser?.role === 'creator') {
+                this.cartCount = 0;
+                return;
+            }
+
+            fetch(
+                `/resources/apis.php/cart/user_id/${encodeURIComponent(uid)}`
+            )
+                .then((res) => res.json())
+                .then((data) => {
+                    this.cartCount = Array.isArray(data) ? data.length : 0;
+                })
+                .catch(() => {
+                    this.cartCount = 0;
+                });
+        },
+        handleAuthChange() {
+            this.syncAuth();
+            this.fetchCartCount();
+        },
+        handleLogout() {
+            localStorage.removeItem('nexusUser');
+            localStorage.removeItem('user');
+            this.currentUser = null;
+            this.cartCount = 0;
+            window.dispatchEvent(new Event('auth-changed'));
+            this.$router.push('/');
+        }
+    }
+};
+</script>
+
+<style scoped>
+.cus-navbar {
+    background: rgba(8, 10, 15, 0.85);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 12px max(4vw, 28px);
+    z-index: 1000;
 }
 
-.navbar.cus-navbar{
-  padding: 10px 35px;
+.brand-link {
+    transition: opacity 0.2s;
 }
 
+.brand-link:hover {
+    opacity: 0.88;
+}
+
+/* Navigation Links with Cyan Underline Indicator */
 .nav-link.nav-links {
-  color: var(--muted);
-  font-size: 15px;
-  font-weight: 500;
+    position: relative;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 8px 2px;
+    transition: color 0.2s;
 }
 
-.nav-link.nav-links.active, .nav-link.nav-links:hover {
-  color: var(--text);
+.nav-link.nav-links::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    background: var(--cyan);
+    transform: scaleX(0);
+    transform-origin: center;
+    transition: transform 0.22s ease;
+    box-shadow: 0 0 10px var(--cyan);
 }
 
-.cart-button {
-  border: 1px solid #252936;
-  background-color: #101218;
-  width: 38px;
-  height: 38px;
+.nav-link.nav-links:hover,
+.nav-link.nav-links.active {
+    color: #fff;
 }
 
+.nav-link.nav-links.active::after,
+.nav-link.nav-links:hover::after {
+    transform: scaleX(1);
+}
+
+/* Guest Buttons */
+.login-btn {
+    color: #d5d8e0;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 9px 14px;
+    transition: color 0.2s;
+}
+
+.login-btn:hover {
+    color: var(--cyan);
+}
+
+.cta-btn {
+    background: var(--cyan);
+    color: #061014;
+    padding: 10px 18px;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    box-shadow: 0 0 20px rgba(0, 242, 254, 0.28);
+    transition: filter 0.2s, transform 0.15s;
+}
+
+.cta-btn:hover {
+    color: #061014;
+    filter: brightness(1.1);
+    transform: translateY(-1px);
+}
+
+/* Creator Button */
+.creator-btn {
+    background: rgba(138, 108, 255, 0.14);
+    border: 1px solid #a58fff;
+    color: #cbbdff;
+    padding: 9px 16px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    transition: all 0.2s;
+}
+
+.creator-btn:hover {
+    background: #a58fff;
+    color: #08090d;
+}
+
+/* Cart Button */
 .icon-link {
     position: relative;
     width: 38px;
@@ -151,45 +300,92 @@ nav {
     place-items: center;
     border: 1px solid #252936;
     background: #101218;
-    color: #f7f8fb;
+    transition: border-color 0.2s;
 }
 
-.icon-link span {
-  position: absolute;
-  top: 0;
-  right: 0;
-  transform: translate(50%, -50%);
-  background-color: #00f2fe;
-  color: #000;
-  font-weight: bold;
-  padding: 2px 5px;
-  border-radius: 100%;
-  font-size: 9px;
+.icon-link:hover {
+    border-color: var(--cyan);
 }
 
-.login {
-  font-size: 13px;
+.cart-badge {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    display: grid;
+    place-items: center;
+    background: var(--cyan);
+    color: #061014;
+    font-size: 10px;
+    font-weight: 800;
+    border-radius: 999px;
+    box-shadow: 0 0 10px rgba(0, 242, 254, 0.6);
 }
 
-.register {
-  background-color: #00f2fe;
-  padding: 10px 18px;
-  color: #000;
-  font-size: 13px;
-  font-weight: 700;
-  box-shadow: 0 0 22px rgba(0, 242, 254, 0.5);
+/* User Profile Pill */
+.profile-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 14px 5px 6px;
+    background: #101218;
+    border: 1px solid #252936;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    transition: border-color 0.2s;
 }
 
+.profile-pill:hover {
+    border-color: var(--cyan);
+    color: var(--cyan);
+}
+
+.pill-avatar {
+    width: 26px;
+    height: 26px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #00f2fe33, #8a6cff44);
+    border: 1px solid var(--cyan);
+    color: var(--cyan);
+    font-size: 10px;
+    font-weight: 800;
+}
+
+/* Logout Button */
 .logout-btn {
     background: transparent;
     border: 1px solid #252936;
     color: var(--muted);
-    padding: 9px 14px;
+    padding: 8px 14px;
     font-size: 12px;
+    font-weight: 600;
+    transition: all 0.2s;
 }
 
 .logout-btn:hover {
-    color: var(--cyan);
-    border-color: var(--cyan);
+    color: #ff6969;
+    border-color: #ff6969;
+}
+
+@media (max-width: 860px) {
+    .nav-center {
+        order: 3;
+        width: 100%;
+        justify-content: center;
+        padding-top: 10px;
+        margin-top: 10px;
+        border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+}
+
+@media (max-width: 480px) {
+    .pill-name {
+        display: none;
+    }
 }
 </style>

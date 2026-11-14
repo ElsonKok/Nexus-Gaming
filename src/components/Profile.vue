@@ -1,87 +1,3 @@
-
-<script setup>
-import { ref, computed } from 'vue';
-import { gamesData, toSlug } from '../assets/games.js';
-
-const demoProfile = {
-    id: 1,
-    username: 'Alex Morgan',
-    email: 'alex@nexus.com',
-    role: 'creator',
-    joinedDate: '2024-01-15',
-    purchasedGameIds: [1],
-    creatorGameIds: [1, 2]
-};
-
-// Temporary profile until the authentication API is connected
-function loadProfile() {
-    try {
-        return JSON.parse(localStorage.getItem('user')) || demoProfile;
-    } catch {
-        return demoProfile;
-    }
-}
-
-const profile = ref(loadProfile());
-const games = ref([...gamesData]);
-
-const role = computed(() => profile.value.role?.toLowerCase() || 'user');
-
-const displayName = computed(() =>
-    profile.value.username || profile.value.displayName || 'Player'
-);
-
-const initials = computed(() =>
-    displayName.value
-        .split(' ')
-        .map(word => word[0])
-        .join('')
-        .slice(0, 2)
-        .toUpperCase()
-);
-
-const isCreator = computed(() => role.value === 'creator');
-const isAdmin = computed(() => role.value === 'admin');
-
-// Purchased games
-const purchasedGames = computed(() => {
-    const ids = profile.value.purchasedGameIds || [];
-
-    return games.value.filter(game => ids.includes(game.id));
-});
-
-// Favourite games
-const favouriteGames = computed(() =>
-    games.value.filter(game => game.liked)
-);
-
-// Creator's own games
-const creatorGames = computed(() => {
-    const ids = profile.value.creatorGameIds || [];
-
-    return games.value.filter(game => ids.includes(game.id));
-});
-
-// Admin can see every game
-const adminGames = computed(() => games.value);
-
-const price = (value) => `RM ${Number(value).toFixed(2)}`;
-
-const gameLink = (game) => `/game/${toSlug(game.title)}`;
-
-function deleteGame(id) {
-    const confirmed = window.confirm(
-        'Are you sure you want to delete this game?'
-    );
-
-    if (!confirmed) return;
-
-    // Temporary frontend deletion only.
-    // Replace with the backend DELETE API later.
-    games.value = games.value.filter(game => game.id !== id);
-}
-</script>
-
 <template>
     <main class="profile-page">
 
@@ -99,7 +15,7 @@ function deleteGame(id) {
                     <div class="profile-details">
 
                         <span class="profile-badge">
-                            NEXUS {{ role.toUpperCase() }}
+                            NEXUS {{ isCreator ? 'DEVELOPER' : role.toUpperCase() }}
                         </span>
 
                         <h1>{{ displayName }}</h1>
@@ -113,7 +29,7 @@ function deleteGame(id) {
                                        isAdmin ? adminGames.length :
                                        purchasedGames.length }}
                                 </strong>
-                                {{ isCreator ? 'Games' :
+                                {{ isCreator ? 'Created Games' :
                                    isAdmin ? 'Total Games' : 'Games Owned' }}
                             </span>
 
@@ -122,9 +38,9 @@ function deleteGame(id) {
                                 Favourites
                             </span>
 
-                            <span>
-                                <strong>Member</strong>
-                                Since {{ profile.joinedDate || '2025' }}
+                            <span v-if="isCreator && creatorId">
+                                <strong>ID</strong>
+                                {{ creatorId }}
                             </span>
                         </div>
 
@@ -146,8 +62,11 @@ function deleteGame(id) {
         <section class="profile-content">
             <div class="container">
 
+                <p v-if="loading" class="empty-state">Loading profile data...</p>
+                <p v-else-if="err" class="empty-state text-danger">Error: {{ err }}</p>
+
                 <!-- Normal User -->
-                <template v-if="!isCreator && !isAdmin">
+                <template v-else-if="!isCreator && !isAdmin">
 
                     <div class="section-heading">
                         <div>
@@ -164,7 +83,7 @@ function deleteGame(id) {
                     <div v-if="purchasedGames.length" class="row g-4">
                         <div
                             v-for="game in purchasedGames"
-                            :key="game.id"
+                            :key="game.game_id"
                             class="col-12 col-sm-6 col-lg-3"
                         >
                             <article class="profile-game-card">
@@ -182,7 +101,7 @@ function deleteGame(id) {
                                     <span>{{ game.genre }}</span>
                                     <h3>{{ game.title }}</h3>
 
-                                    <router-link :to="gameLink(game)">
+                                    <router-link :to="gameLink(game)" @click="openGame(game)">
                                         View Details →
                                     </router-link>
                                 </div>
@@ -196,13 +115,13 @@ function deleteGame(id) {
 
                 </template>
 
-                <!-- Creator -->
+                <!-- Developer / Creator -->
                 <template v-else-if="isCreator">
 
                     <div class="section-heading">
                         <div>
-                            <span class="section-subtitle">CREATOR STUDIO</span>
-                            <h2>My Uploaded Games</h2>
+                            <span class="section-subtitle">DEVELOPER STUDIO</span>
+                            <h2>My Created Games</h2>
                             <p>Manage the games you have published on Nexus.</p>
                         </div>
 
@@ -229,7 +148,7 @@ function deleteGame(id) {
                             <tbody>
                                 <tr
                                     v-for="game in creatorGames"
-                                    :key="game.id"
+                                    :key="game.game_id"
                                 >
                                     <td>
                                         <div class="game-table-info">
@@ -242,18 +161,24 @@ function deleteGame(id) {
                                                 🎮
                                             </div>
 
-                                            <strong>{{ game.title }}</strong>
+                                            <router-link
+                                                :to="gameLink(game)"
+                                                class="text-white text-decoration-none"
+                                                @click="openGame(game)"
+                                            >
+                                                <strong>{{ game.title }}</strong>
+                                            </router-link>
                                         </div>
                                     </td>
 
                                     <td>{{ game.genre }}</td>
                                     <td>{{ price(game.price) }}</td>
-                                    <td>★ {{ game.rating }}</td>
+                                    <td>★ {{ game.rating.toFixed(1) }}</td>
 
                                     <td>
                                         <div class="table-actions">
                                             <router-link
-                                                :to="`/games/edit/${game.id}`"
+                                                :to="`/games/edit/${game.game_id}`"
                                                 class="edit-action"
                                             >
                                                 Edit
@@ -262,7 +187,7 @@ function deleteGame(id) {
                                             <button
                                                 type="button"
                                                 class="delete-action"
-                                                @click="deleteGame(game.id)"
+                                                @click="deleteGame(game.game_id)"
                                             >
                                                 Delete
                                             </button>
@@ -274,7 +199,7 @@ function deleteGame(id) {
                     </div>
 
                     <p v-else class="empty-state">
-                        You haven't uploaded any games yet.
+                        You haven't created any games yet.
                     </p>
 
                 </template>
@@ -385,15 +310,16 @@ function deleteGame(id) {
 
                         <div
                             v-for="game in favouriteGames"
-                            :key="game.id"
+                            :key="game.game_id"
                             class="col-12 col-sm-6 col-lg-3"
                         >
                             <router-link
                                 :to="gameLink(game)"
                                 class="favourite-item"
+                                @click="openGame(game)"
                             >
                                 <strong>{{ game.title }}</strong>
-                                <span>★ {{ game.rating }}</span>
+                                <span>★ {{ game.rating.toFixed(1) }}</span>
                             </router-link>
                         </div>
 
@@ -409,6 +335,195 @@ function deleteGame(id) {
 
     </main>
 </template>
+
+<script>
+export default {
+    name: 'ProfileView',
+    data() {
+        return {
+            profile: {
+                id: '',
+                username: 'Guest',
+                email: '',
+                role: 'user',
+                joinedDate: '2025'
+            },
+            games: [],
+            favourites: [],
+            payments: [],
+            loading: false,
+            err: ''
+        };
+    },
+    computed: {
+        role() {
+            const rawRole = String(this.profile.role || '').toLowerCase();
+            if (rawRole === 'developer' || rawRole === 'creator' || this.profile.developer_id) {
+                return 'creator';
+            }
+            if (rawRole === 'admin') {
+                return 'admin';
+            }
+            return 'user';
+        },
+        displayName() {
+            return this.profile.username || this.profile.displayName || 'Player';
+        },
+        initials() {
+            return this.displayName
+                .split(' ')
+                .map((word) => word[0])
+                .join('')
+                .slice(0, 2)
+                .toUpperCase();
+        },
+        isCreator() {
+            return this.role === 'creator';
+        },
+        isAdmin() {
+            return this.role === 'admin';
+        },
+        creatorId() {
+            return String(this.profile.developer_id || this.profile.id || '').trim();
+        },
+        userId() {
+            return String(this.profile.user_id || this.profile.id || '').trim();
+        },
+        // Developer's own created games from the `game` table
+        creatorGames() {
+            const devId = this.creatorId.toLowerCase();
+            const devName = String(this.profile.username || '').trim().toLowerCase();
+
+            return this.games.filter((game) => {
+                const gameDevId = String(game.developer_id || '').trim().toLowerCase();
+                const gameDev = String(game.developer || '').trim().toLowerCase();
+
+                return (
+                    (devId && (gameDevId === devId || gameDev === devId)) ||
+                    (devName && gameDev === devName)
+                );
+            });
+        },
+        // User's purchased games matched against the `payment` table
+        purchasedGames() {
+            const paidIds = new Set(
+                this.payments
+                    .filter((p) => String(p.user_id || '') === this.userId)
+                    .map((p) => String(p.game_id))
+            );
+            return this.games.filter((game) => paidIds.has(String(game.game_id)));
+        },
+        // Favourites matched against the `favourite` table
+        favouriteGames() {
+            const currentId = this.isCreator ? this.creatorId : this.userId;
+            const favIds = new Set(
+                this.favourites
+                    .filter((f) => String(f.user_id || '') === currentId)
+                    .map((f) => String(f.game_id))
+            );
+            return this.games.filter((game) => favIds.has(String(game.game_id)));
+        },
+        adminGames() {
+            return this.games;
+        }
+    },
+    mounted() {
+        this.loadProfile();
+        this.fetchDashboardData();
+    },
+    methods: {
+        loadProfile() {
+            try {
+                const saved =
+                    JSON.parse(localStorage.getItem('nexusUser')) ||
+                    JSON.parse(localStorage.getItem('user'));
+
+                if (saved) {
+                    this.profile = saved;
+                }
+            } catch {
+                // Keep default profile if storage is empty
+            }
+        },
+        toSlug(title) {
+            return String(title)
+                .toLowerCase()
+                .trim()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-|-$/g, '');
+        },
+        price(value) {
+            const num = Number(value) || 0;
+            return num === 0 ? 'Free' : `RM ${num.toFixed(2)}`;
+        },
+        gameLink(game) {
+            return `/game/${this.toSlug(game.title)}`;
+        },
+        openGame(game) {
+            sessionStorage.setItem('selectedGame', JSON.stringify(game));
+        },
+        fetchDashboardData() {
+            const baseApi = `/resources/apis.php`;
+            this.loading = true;
+            this.err = '';
+
+            Promise.all([
+                fetch(`${baseApi}/game`).then((r) => r.json()),
+                fetch(`${baseApi}/favourite`).then((r) => r.json()).catch(() => []),
+                fetch(`${baseApi}/payment`).then((r) => r.json()).catch(() => [])
+            ])
+                .then(([gamesRes, favRes, payRes]) => {
+                    this.games = Array.isArray(gamesRes)
+                        ? gamesRes.map((row) => ({
+                              ...row,
+                              id: row.game_id,
+                              img: row.image || '',
+                              price: Number(row.price) || 0,
+                              rating: Number(row.rating) || 0
+                          }))
+                        : [];
+
+                    this.favourites = Array.isArray(favRes) ? favRes : [];
+                    this.payments = Array.isArray(payRes) ? payRes : [];
+                })
+                .catch((error) => {
+                    this.err = error.message;
+                })
+                .finally(() => {
+                    this.loading = false;
+                });
+        },
+        deleteGame(gameId) {
+            const confirmed = window.confirm(
+                'Are you sure you want to delete this game?'
+            );
+            if (!confirmed) return;
+
+            const baseApi = `/resources/apis.php`;
+
+            fetch(`${baseApi}/game/game_id/${encodeURIComponent(gameId)}`, {
+                method: 'DELETE'
+            })
+                .then((res) => {
+                    if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+                    return res.json();
+                })
+                .then((data) => {
+                    if (data.error) {
+                        alert('Failed to delete game: ' + data.error);
+                        return;
+                    }
+                    this.games = this.games.filter(
+                        (game) => String(game.game_id) !== String(gameId)
+                    );
+                })
+                .catch((error) => {
+                    alert('Error deleting game: ' + error.message);
+                });
+        }
+    }
+};
+</script>
 
 <style scoped>
 .profile-page {
