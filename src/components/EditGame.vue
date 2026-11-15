@@ -37,10 +37,7 @@ export default {
                 'MMORPG',
                 'Adventure',
                 'Racing',
-                'Strategy',
-                'Simulation',
-                'Horror',
-                'Puzzle'
+                'Strategy'
             ],
             form: {
                 title: '',
