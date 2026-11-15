@@ -15,9 +15,9 @@ const timeline = [
 ];
 
 const team = [
-    { name: 'Kok Zhong Bo', role: 'Team Lead', img: '' },
-    { name: 'Looi Yi Sean', role: 'Team Lead', img: '' },
-    { name: 'Nyin Seng Yik', role: 'Team Lead', img: '' }
+    { name: 'Kok Zhong Bo', role: 'Team Lead & Backend Developer', img: '' },
+    { name: 'Looi Yi Sean', role: 'UI/UX Developer', img: '' },
+    { name: 'Nyin Seng Yik', role: 'Frontend Developer & QA Tester', img: '' }
 ];
 
 const faqs = [
