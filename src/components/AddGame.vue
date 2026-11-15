@@ -1,4 +1,7 @@
 <script>
+import { cpu } from '../api/cpuapi.js';
+import { gpu } from '../api/gpuapi.js';
+
 export default {
     name: 'AddGame',
     data() {
@@ -9,6 +12,14 @@ export default {
             imagePreview: '',
             imageFileName: '',
             isToday: false,
+            cpuOptions: cpu,
+            gpuOptions: gpu,
+            osOptions: [
+                { label: 'Windows 10', value: 'windows10' },
+                { label: 'Windows 11', value: 'windows11' },
+                { label: 'Windows 10 / Windows 11', value: 'windows10,windows11' }
+            ],
+            memoryOptions: [2, 4, 6, 8, 10, 12, 14, 16],
             platforms: [
                 'PC',
                 'PlayStation',
@@ -38,7 +49,11 @@ export default {
                 image: null,
                 url: '',
                 price: 0,
-                rating: 0
+                rating: 0,
+                os: 'windows10,windows11',
+                cpuId: cpu[0]?.id || '',
+                memory: 8,
+                gpuId: gpu[0]?.id || ''
             }
         };
     },
@@ -141,6 +156,14 @@ export default {
                 return;
             }
 
+            // Store [os, cpuId, memoryGB, gpuId] as a JSON array string in `specs`
+            const specsArray = [
+                this.form.os,
+                Number(this.form.cpuId),
+                Number(this.form.memory),
+                Number(this.form.gpuId)
+            ];
+
             const payload = {
                 title: this.form.title.trim(),
                 genre: this.form.genre,
@@ -151,7 +174,8 @@ export default {
                 image: this.form.image || null,
                 url: this.form.url.trim(),
                 price: Number(this.form.price) || 0,
-                rating: Number(this.form.rating) || 0
+                rating: Number(this.form.rating) || 0,
+                specs: JSON.stringify(specsArray)
             };
 
             const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
@@ -261,6 +285,73 @@ export default {
                                 />
                                 {{ platform }}
                             </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Minimum System Requirements -->
+                <div class="form-section">
+                    <h2>Minimum System Requirements</h2>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label>Operating System (OS) *</label>
+                                <select v-model="form.os" required>
+                                    <option
+                                        v-for="item in osOptions"
+                                        :key="item.value"
+                                        :value="item.value"
+                                    >
+                                        {{ item.label }}
+                                    </option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label>Memory (RAM) *</label>
+                                <select v-model.number="form.memory" required>
+                                    <option
+                                        v-for="ram in memoryOptions"
+                                        :key="ram"
+                                        :value="ram"
+                                    >
+                                        {{ ram }} GB RAM
+                                    </option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label>Processor (CPU) *</label>
+                                <select v-model.number="form.cpuId" required>
+                                    <option
+                                        v-for="item in cpuOptions"
+                                        :key="item.id"
+                                        :value="item.id"
+                                    >
+                                        {{ item.manufacturer }} {{ item.name }}
+                                    </option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label>Graphics (GPU) *</label>
+                                <select v-model.number="form.gpuId" required>
+                                    <option
+                                        v-for="item in gpuOptions"
+                                        :key="item.id"
+                                        :value="item.id"
+                                    >
+                                        {{ item.manufacturer }} {{ item.name }}
+                                    </option>
+                                </select>
+                            </div>
                         </div>
                     </div>
                 </div>

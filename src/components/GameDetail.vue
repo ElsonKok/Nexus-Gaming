@@ -50,9 +50,9 @@
 
                     <!-- System Requirements -->
                     <section class="mb-5">
-                        <h2 class="section-heading">System Requirements (Mininum)</h2>
+                        <h2 class="section-heading">System Requirements (Minimum)</h2>
                         <div class="specs row g-0">
-                            <div v-for="spec in specs" :key="spec.label" class="col-sm-6 spec-cell">
+                            <div v-for="spec in resolvedSpecs" :key="spec.label" class="col-sm-6 spec-cell">
                                 <span>{{ spec.label }}</span>
                                 <strong>{{ spec.value }}</strong>
                             </div>
@@ -160,7 +160,7 @@
                             </span>
                         </div>
 
-                        <div v-if="isCreator">
+                        <div v-if="canEditGame">
                             <hr class="my-1" />
                             <span class="badge badge-violet align-self-start w-100">CREATOR ACCESS</span>
                             <router-link :to="`/games/edit/${game.game_id}`" class="btn btn-ghost w-100 text-decoration-none mt-2">
@@ -175,6 +175,9 @@
 </template>
 
 <script>
+import { cpu } from '../api/cpuapi.js';
+import { gpu } from '../api/gpuapi.js';
+
 export default {
     name: 'GameDetail',
     data() {
@@ -192,12 +195,6 @@ export default {
             addingToCart: false,
             addedToCart: false,
             cartError: '',
-            specs: [
-                { label: 'OS', value: 'Windows 10/11 64-bit' },
-                { label: 'Processor', value: 'Intel Core i7-12700K / Ryzen 7 5800X' },
-                { label: 'Memory', value: '16 GB RAM' },
-                { label: 'Graphics', value: 'NVIDIA RTX 3070 / RX 6800' }
-            ],
             reviews: [
                 {
                     id: 1,
@@ -216,6 +213,23 @@ export default {
         isCreator() {
             const role = String(this.currentUser?.role || '').toLowerCase();
             return role === 'creator' || role === 'developer' || Boolean(this.currentUser?.developer_id);
+        },
+        canEditGame() {
+            if (!this.game || !this.currentUser) return false;
+
+            const devId = String(this.currentUser.developer_id || '').trim().toLowerCase();
+            if (!devId) return false;
+
+            // Admin developer account (D0000) can edit all games
+            if (devId === 'd0000') return true;
+
+            const gameDev = String(this.game.developer || '').trim().toLowerCase();
+            const devUsername = String(this.currentUser.username || '').trim().toLowerCase();
+
+            return (
+                gameDev === devId ||
+                (devUsername && gameDev === devUsername)
+            );
         },
         activeAccountId() {
             return String(
@@ -239,6 +253,50 @@ export default {
         releaseYear() {
             if (!this.game || !this.game.release_date) return '';
             return String(this.game.release_date).split('-')[0];
+        },
+        resolvedSpecs() {
+            const fallback = [
+                { label: 'OS', value: 'Windows 10 / Windows 11 (64-bit)' },
+                { label: 'Processor', value: 'Intel Core i7-12700K / Ryzen 7 5800X' },
+                { label: 'Memory', value: '16 GB RAM' },
+                { label: 'Graphics', value: 'NVIDIA RTX 3070 / RX 6800' }
+            ];
+
+            if (!this.game?.specs) return fallback;
+
+            try {
+                const parsed = Array.isArray(this.game.specs)
+                    ? this.game.specs
+                    : JSON.parse(this.game.specs);
+
+                if (!Array.isArray(parsed) || parsed.length < 4) return fallback;
+
+                const [rawOs, cpuId, memoryGb, gpuId] = parsed;
+
+                const osMap = {
+                    windows10: 'Windows 10 (64-bit)',
+                    windows11: 'Windows 11 (64-bit)',
+                    'windows10,windows11': 'Windows 10 / Windows 11 (64-bit)'
+                };
+
+                const foundCpu = cpu.find((c) => Number(c.id) === Number(cpuId));
+                const foundGpu = gpu.find((g) => Number(g.id) === Number(gpuId));
+
+                return [
+                    { label: 'OS', value: osMap[rawOs] || rawOs },
+                    {
+                        label: 'Processor',
+                        value: foundCpu ? `${foundCpu.manufacturer} ${foundCpu.name}` : `CPU #${cpuId}`
+                    },
+                    { label: 'Memory', value: `${memoryGb} GB RAM` },
+                    {
+                        label: 'Graphics',
+                        value: foundGpu ? `${foundGpu.manufacturer} ${foundGpu.name}` : `GPU #${gpuId}`
+                    }
+                ];
+            } catch {
+                return fallback;
+            }
         }
     },
     mounted() {
@@ -289,7 +347,8 @@ export default {
                 url: row.url,
                 price: Number(row.price) || 0,
                 rating: Number(row.rating) || 0,
-                liked: Boolean(row.liked)
+                liked: Boolean(row.liked),
+                specs: row.specs || ''
             };
         },
         resolveDeveloperName() {
@@ -372,7 +431,7 @@ export default {
 
             if (saved) {
                 const parsed = JSON.parse(saved);
-                if (this.toSlug(parsed.title) === slug) {
+                if (this.toSlug(parsed.title) === slug && parsed.specs !== undefined) {
                     this.game = this.normalizeRow(parsed);
                     this.resolveDeveloperName();
                     this.checkIfPurchased();
@@ -381,7 +440,7 @@ export default {
                 }
             }
 
-            // Fallback if opened directly or refreshed at /game/:slug
+            // Fetch from API if opened directly, refreshed, or cached copy lacked specs
             const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
             this.loading = true;
             fetch(`${baseApi}/game`)
