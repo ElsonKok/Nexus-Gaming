@@ -1,8 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { getGames } from '../api/games.js';
-import { toSlug } from '../assets/games.js';
+import { getGames, toSlug } from '../api/games.js';
 
 const router = useRouter();
 
@@ -19,7 +18,7 @@ async function loadGames() {
         games.value = await getGames();
     } catch (err) {
         console.error('Error loading games:', err);
-        error.value = 'Unable to load games. Please try again later.';
+        error.value = `Unable to load games. ${err.message}`;
     } finally {
         loading.value = false;
     }
@@ -29,21 +28,21 @@ onMounted(loadGames);
 
 /* ---------------- what each section shows ---------------- */
 // 4 highest rated games
+const byNewest = (a, b) => new Date(b.releaseDate || 0) - new Date(a.releaseDate || 0);
+
 const popularGames = computed(() =>
-    [...games.value].sort((a, b) => b.rating - a.rating).slice(0, 4)
+    [...games.value].sort((a, b) => b.rating - a.rating || byNewest(a, b)).slice(0, 4)
 );
 
 // 4 newest games
 const latestGames = computed(() =>
-    [...games.value]
-        .sort((a, b) => new Date(b.releaseDate) - new Date(a.releaseDate))
-        .slice(0, 4)
+    [...games.value].sort(byNewest).slice(0, 4)
 );
 
 // the hero highlights the top rated game
 const heroGame = computed(() => popularGames.value[0] || null);
 
-// categories come from the data, so they always match the Game page filters
+// categories come from the genres in the database (up to 8, biggest first)
 const categories = computed(() => {
     const counts = {};
     games.value.forEach((g) => {
@@ -51,36 +50,47 @@ const categories = computed(() => {
     });
     return Object.entries(counts)
         .sort((a, b) => b[1] - a[1])
-        .slice(0, 4)
-        .map(([value, count]) => ({ value, count, label: formatGenre(value) }));
+        .slice(0, 8)
+        .map(([value, count]) => ({ value, count, label: value }));
 });
 
-const categoryStyles = ['category-a', 'category-b', 'category-c', 'category-d'];
-const genreIcons = { action: '🎯', 'sci-fi': '🚀', racing: '🏎️', strategy: '♟️', adventure: '🧭' };
+const genreIcons = {
+    Shooter: '🎯',
+    MMORPG: '🌍',
+    'Action RPG': '⚔️',
+    'Battle Royale': '👑',
+    Racing: '🏎️',
+    Strategy: '♟️',
+    Sports: '⚽',
+    Adventure: '🧭',
+};
 const genreIcon = (genre) => genreIcons[genre] || '🎮';
+const categoryStyles = ['category-a', 'category-b', 'category-c', 'category-d'];
+
+// real numbers for the hero text
+const heroBlurb = computed(() =>
+    games.value.length
+        ? `Browse ${games.value.length} games across ${new Set(games.value.map((g) => g.genre)).size} genres, compare ratings and prices, and save your favourites before you buy.`
+        : 'Browse our library, compare ratings and prices, and save your favourites before you buy.'
+);
 
 /* ---------------- helpers ---------------- */
-const platformNames = {
-    pc: 'PC',
-    playstation: 'PlayStation',
-    xbox: 'Xbox',
-    switch: 'Nintendo Switch'
-};
-
-const formatGenre = (genre) =>
-    genre
-        .split('-')
-        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-        .join('-');
-
+// platforms come from the database as names, e.g. ['PC', 'Xbox']
 const platformsText = (list = []) =>
-    list.length >= 4 ? 'All platforms' : list.map((p) => platformNames[p] || p).join(' · ');
+    list.length >= 4 ? 'All platforms' : list.join(' · ');
 
 const price = (value) => `RM ${Number(value).toFixed(2)}`;
+const ratingText = (g) => (g.rating > 0 ? `★ ${g.rating.toFixed(1)}` : 'New');
 const gameLink = (game) => `/game/${toSlug(game.title)}`;
 
 const formatDate = (iso) =>
-    new Date(iso).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' });
+    iso ? new Date(iso).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Date to be announced';
+
+// games without an image get a coloured tile (the colour comes from the title)
+const hue = (text) => [...text].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 0);
+const tileStyle = (game) => ({
+    background: `linear-gradient(135deg, hsl(${hue(game.title)} 45% 24%), hsl(${(hue(game.title) + 40) % 360} 40% 9%))`,
+});
 
 /* ---------------- search ---------------- */
 function searchGames() {
@@ -114,10 +124,7 @@ const isLoggedIn = computed(() => {
                             <span>Gaming Adventure.</span>
                         </h1>
 
-                        <p>
-                            Browse our curated library, compare ratings and prices,
-                            and save your favourites before you buy.
-                        </p>
+                        <p>{{ heroBlurb }}</p>
 
                         <form class="hero-search" role="search" @submit.prevent="searchGames">
                             <input
@@ -138,15 +145,15 @@ const isLoggedIn = computed(() => {
                     <div class="col-lg-5 hero-visual">
                         <div v-if="heroGame" class="hero-image-wrapper">
                             <router-link :to="gameLink(heroGame)" class="hero-art" :aria-label="`View ${heroGame.title}`">
-                                <img v-if="heroGame.img" :src="heroGame.img" :alt="heroGame.title" class="hero-image" />
-                                <div v-else class="hero-image hero-fallback">{{ heroGame.title[0] }}</div>
+                                <img v-if="heroGame.image" :src="heroGame.image" :alt="heroGame.title" class="hero-image" />
+                                <div v-else class="hero-image hero-fallback" :style="tileStyle(heroGame)">{{ heroGame.title[0] }}</div>
                             </router-link>
 
                             <router-link :to="gameLink(heroGame)" class="hero-floating-card">
                                 <span class="floating-icon">🎮</span>
                                 <div>
                                     <strong>Top rated: {{ heroGame.title }}</strong>
-                                    <small>★ {{ heroGame.rating.toFixed(1) }} · {{ price(heroGame.price) }}</small>
+                                    <small>{{ ratingText(heroGame) }} · {{ price(heroGame.price) }}</small>
                                 </div>
                             </router-link>
                         </div>
@@ -221,7 +228,7 @@ const isLoggedIn = computed(() => {
                         <article class="game-card">
                             <router-link :to="gameLink(game)" class="card-image">
                                 <img v-if="game.img" :src="game.img" :alt="game.title" loading="lazy" />
-                                <div v-else class="img-fallback">{{ game.title[0] }}</div>
+                                <div v-else class="img-fallback" :style="tileStyle(game)">{{ game.title[0] }}</div>
                             </router-link>
 
                             <div class="game-info">
@@ -230,12 +237,12 @@ const isLoggedIn = computed(() => {
                                     <router-link :to="gameLink(game)">{{ game.title }}</router-link>
                                 </h3>
 
-                                <p class="game-description">{{ game.tagline || game.description }}</p>
+                                <p class="game-description">{{ game.description }}</p>
 
                                 <div class="game-platform">{{ platformsText(game.platforms) }}</div>
 
                                 <div class="game-meta">
-                                    <span class="rating">★ {{ game.rating.toFixed(1) }}</span>
+                                    <span class="rating">{{ ratingText(game) }}</span>
                                     <strong>{{ price(game.price) }}</strong>
                                 </div>
 
@@ -293,7 +300,7 @@ const isLoggedIn = computed(() => {
                         <article class="offer-card">
                             <router-link :to="gameLink(game)" class="offer-thumb">
                                 <img v-if="game.img" :src="game.img" :alt="game.title" loading="lazy" />
-                                <div v-else class="img-fallback">{{ game.title[0] }}</div>
+                                <div v-else class="img-fallback" :style="tileStyle(game)">{{ game.title[0] }}</div>
                             </router-link>
 
                             <div class="offer-details">
@@ -787,7 +794,7 @@ a {
 /* ---------- categories ---------- */
 .category-card {
     display: block;
-    height: 160px;
+    height: 130px;
     padding: 20px;
     border: 1px solid var(--line);
     color: #fff;

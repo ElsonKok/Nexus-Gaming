@@ -19,8 +19,8 @@ try {
     $input = json_decode(file_get_contents('php://input'), true);
 
     // Mercury database connection
-    $conn = mysqli_connect('feenix-mariadb.swin.edu.au', 's106200220', '280904', 's106200220_db');
-    //$conn = mysqli_connect('localhost', 'root', '', 'nexus');
+    //$conn = mysqli_connect('feenix-mariadb.swin.edu.au', 's106200220', '280904', 's106200220_db');
+    $conn = mysqli_connect('localhost', 'root', '', 'nexus');
 
     if (!$conn) {
         http_response_code(500);
