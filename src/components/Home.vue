@@ -1,7 +1,9 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { getGames, toSlug } from '../api/games.js';
+import { getPurchasedGameIds } from '../api/payments.js';
+import { currentUser } from '../api/auth.js';
 
 const router = useRouter();
 
@@ -74,6 +76,68 @@ const heroBlurb = computed(() =>
         : 'Browse our library, compare ratings and prices, and save your favourites before you buy.'
 );
 
+/* ---------------- recommendations ----------------
+   Games from the same genres as the games the user has paid for (payment table),
+   leaving out games they already own. Genres they bought more often rank first,
+   then the higher rated games. */
+const accountId = computed(() => {
+    const u = currentUser.value;
+    if (!u || u.developer_id) return ''; // guests and developer accounts have no purchases
+    return String(u.user_id || u.id || '').trim();
+});
+
+const purchasedIds = ref([]);
+const recLoading = ref(false);
+
+async function loadPurchases() {
+    const id = accountId.value;
+    purchasedIds.value = [];
+    if (!id) {
+        recLoading.value = false;
+        return;
+    }
+    recLoading.value = true;
+    try {
+        const ids = await getPurchasedGameIds(id);
+        if (id === accountId.value) purchasedIds.value = ids; // ignore a late reply for a previous user
+    } catch (err) {
+        // recommendations are optional, so a failure only hides the section
+        console.warn('Could not load purchases for recommendations:', err);
+    } finally {
+        if (id === accountId.value) recLoading.value = false;
+    }
+}
+watch(accountId, loadPurchases, { immediate: true });
+
+const recommendations = computed(() => {
+    if (!purchasedIds.value.length || !games.value.length) return [];
+
+    const byId = new Map(games.value.map((g) => [g.id, g]));
+    const owned = new Set(purchasedIds.value);
+
+    // per genre: how many owned games, and the most recently bought one
+    const genres = new Map();
+    purchasedIds.value.forEach((id) => {
+        const game = byId.get(id);
+        if (!game) return;
+        const info = genres.get(game.genre) || { count: 0, latest: game };
+        info.count += 1;
+        info.latest = game; // ids are oldest first, so the last one wins
+        genres.set(game.genre, info);
+    });
+
+    return games.value
+        .filter((g) => !owned.has(g.id) && genres.has(g.genre))
+        .sort(
+            (a, b) =>
+                genres.get(b.genre).count - genres.get(a.genre).count ||
+                b.rating - a.rating ||
+                byNewest(a, b)
+        )
+        .slice(0, 4)
+        .map((game) => ({ game, reason: `Because you bought ${genres.get(game.genre).latest.title}` }));
+});
+
 /* ---------------- helpers ---------------- */
 // platforms come from the database as names, e.g. ['PC', 'Xbox']
 const platformsText = (list = []) =>
@@ -82,6 +146,7 @@ const platformsText = (list = []) =>
 const price = (value) => `RM ${Number(value).toFixed(2)}`;
 const ratingText = (g) => (g.rating > 0 ? `★ ${g.rating.toFixed(1)}` : 'New');
 const gameLink = (game) => `/game/${toSlug(game.title)}`;
+const cover = (game) => game.img || game.image || '';
 
 const formatDate = (iso) =>
     iso ? new Date(iso).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Date to be announced';
@@ -98,16 +163,8 @@ function searchGames() {
     router.push({ path: '/game', query: text ? { search: text } : {} });
 }
 
-/* ---------------- guest / logged-in content ----------------
-   TODO: replace with the team's real login state
-   (whatever Login.vue stores once the login API works). */
-const isLoggedIn = computed(() => {
-    try {
-        return !!localStorage.getItem('user');
-    } catch (e) {
-        return false;
-    }
-});
+/* ---------------- guest / logged-in content ---------------- */
+const isLoggedIn = computed(() => !!currentUser.value);
 </script>
 
 <template>
@@ -145,7 +202,7 @@ const isLoggedIn = computed(() => {
                     <div class="col-lg-5 hero-visual">
                         <div v-if="heroGame" class="hero-image-wrapper">
                             <router-link :to="gameLink(heroGame)" class="hero-art" :aria-label="`View ${heroGame.title}`">
-                                <img v-if="heroGame.image" :src="heroGame.image" :alt="heroGame.title" class="hero-image" />
+                                <img v-if="cover(heroGame)" :src="cover(heroGame)" :alt="heroGame.title" class="hero-image" />
                                 <div v-else class="hero-image hero-fallback" :style="tileStyle(heroGame)">{{ heroGame.title[0] }}</div>
                             </router-link>
 
@@ -197,6 +254,54 @@ const isLoggedIn = computed(() => {
             </div>
         </section>
 
+        <!-- ============ Recommended for you (logged-in users who have bought games) ============ -->
+        <section v-if="isLoggedIn && (recLoading || recommendations.length)" class="content-section recommend-section">
+            <div class="container">
+                <div class="section-heading">
+                    <div>
+                        <span class="section-subtitle">RECOMMENDED FOR YOU</span>
+                        <h2>Picked for you</h2>
+                        <p>More games from the genres in your library.</p>
+                    </div>
+                </div>
+
+                <div v-if="loading || recLoading" class="row g-4" aria-hidden="true">
+                    <div v-for="n in 4" :key="n" class="col-12 col-sm-6 col-lg-3">
+                        <div class="skeleton-card"></div>
+                    </div>
+                </div>
+
+                <div v-else class="row g-4">
+                    <div v-for="rec in recommendations" :key="rec.game.id" class="col-12 col-sm-6 col-lg-3">
+                        <article class="game-card">
+                            <router-link :to="gameLink(rec.game)" class="card-image">
+                                <img v-if="cover(rec.game)" :src="cover(rec.game)" :alt="rec.game.title" loading="lazy" />
+                                <div v-else class="img-fallback" :style="tileStyle(rec.game)">{{ rec.game.title[0] }}</div>
+                            </router-link>
+
+                            <div class="game-info">
+                                <span class="game-category">{{ rec.game.genre }}</span>
+                                <h3>
+                                    <router-link :to="gameLink(rec.game)">{{ rec.game.title }}</router-link>
+                                </h3>
+
+                                <p class="rec-reason">{{ rec.reason }}</p>
+
+                                <div class="game-platform">{{ platformsText(rec.game.platforms) }}</div>
+
+                                <div class="game-meta">
+                                    <span class="rating">{{ ratingText(rec.game) }}</span>
+                                    <strong>{{ price(rec.game.price) }}</strong>
+                                </div>
+
+                                <router-link :to="gameLink(rec.game)" class="game-link">View Details &rarr;</router-link>
+                            </div>
+                        </article>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- ============ Popular games ============ -->
         <section class="content-section">
             <div class="container">
@@ -227,7 +332,7 @@ const isLoggedIn = computed(() => {
                     <div v-for="game in popularGames" :key="game.id" class="col-12 col-sm-6 col-lg-3">
                         <article class="game-card">
                             <router-link :to="gameLink(game)" class="card-image">
-                                <img v-if="game.img" :src="game.img" :alt="game.title" loading="lazy" />
+                                <img v-if="cover(game)" :src="cover(game)" :alt="game.title" loading="lazy" />
                                 <div v-else class="img-fallback" :style="tileStyle(game)">{{ game.title[0] }}</div>
                             </router-link>
 
@@ -299,7 +404,7 @@ const isLoggedIn = computed(() => {
                     <div v-for="game in latestGames" :key="game.id" class="col-12 col-md-6">
                         <article class="offer-card">
                             <router-link :to="gameLink(game)" class="offer-thumb">
-                                <img v-if="game.img" :src="game.img" :alt="game.title" loading="lazy" />
+                                <img v-if="cover(game)" :src="cover(game)" :alt="game.title" loading="lazy" />
                                 <div v-else class="img-fallback" :style="tileStyle(game)">{{ game.title[0] }}</div>
                             </router-link>
 
@@ -933,6 +1038,33 @@ a {
 }
 
 
+/* ---------- recommendations ---------- */
+.recommend-section {
+    padding-bottom: 0;
+}
+
+.rec-reason {
+    color: var(--cyan);
+    font-size: 12px;
+    line-height: 1.6;
+    min-height: 58px;
+    margin: 0;
+}
+
+.skeleton-card {
+    height: 330px;
+    background: linear-gradient(100deg, var(--panel) 30%, #171b26 50%, var(--panel) 70%);
+    background-size: 200% 100%;
+    border: 1px solid var(--line);
+    animation: shimmer 1.3s infinite;
+}
+
+@keyframes shimmer {
+    to {
+        background-position: -200% 0;
+    }
+}
+
 /* ---------- small screens ---------- */
 @media (max-width: 767px) {
     .hero-section {
@@ -992,6 +1124,10 @@ a {
     .category-card,
     .card-image img {
         transition: none;
+    }
+
+    .skeleton-card {
+        animation: none;
     }
 }
 </style>
