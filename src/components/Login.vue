@@ -196,16 +196,28 @@ export default {
             this.errorMessage = '';
             this.msg = '';
 
+            const normalizedEmail = this.email.trim().toLowerCase();
+            const cleanUsername = this.username.trim();
+
+            if (!normalizedEmail) {
+                this.errorMessage = 'Please enter a valid email address.';
+                return;
+            }
+
             if (this.mode === 'register') {
+                if (!cleanUsername) {
+                    this.errorMessage = 'Please enter a display name.';
+                    return;
+                }
                 if (this.password !== this.confirmPassword) {
                     this.errorMessage = 'Passwords do not match.';
                     return;
                 }
                 const encodedPassword = await this.hashPassword(this.password);
-                this.registerAccount(this.username, this.email, encodedPassword, this.role);
+                this.registerAccount(cleanUsername, normalizedEmail, encodedPassword, this.role);
             } else {
                 const encodedPassword = await this.hashPassword(this.password);
-                this.loginAccount(this.email, encodedPassword);
+                this.loginAccount(normalizedEmail, encodedPassword);
             }
         },
 
@@ -216,22 +228,26 @@ export default {
             const self = this;
             this.loading = true;
 
+            // Check BOTH `user` and `developer` tables so the email cannot exist in either
             Promise.all([
-                fetch(`${baseApi}/user/email/${encodeURIComponent(mail)}`).then((r) => r.json()),
-                fetch(`${baseApi}/developer/email/${encodeURIComponent(mail)}`).then((r) => r.json())
+                fetch(`${baseApi}/user`).then((r) => r.json()),
+                fetch(`${baseApi}/developer`).then((r) => r.json())
             ])
-                .then(([existingUsers, existingDevs]) => {
-                    const emailTaken =
-                        (Array.isArray(existingUsers) && existingUsers.length > 0) ||
-                        (Array.isArray(existingDevs) && existingDevs.length > 0);
+                .then(([allUsers, allDevs]) => {
+                    const userExists =
+                        Array.isArray(allUsers) &&
+                        allUsers.some((u) => String(u.email || '').trim().toLowerCase() === mail);
 
-                    if (emailTaken) {
-                        self.errorMessage = 'This email is already registered.';
+                    const devExists =
+                        Array.isArray(allDevs) &&
+                        allDevs.some((d) => String(d.email || '').trim().toLowerCase() === mail);
+
+                    if (userExists || devExists) {
+                        self.errorMessage = 'This email is already registered. Please use a different email or log in.';
                         self.loading = false;
                         return null;
                     }
 
-                    // ID is omitted so apis.php auto-generates U0001 / D0001
                     const payload = isDeveloper
                         ? {
                               username: uname,
@@ -253,7 +269,9 @@ export default {
                         body: JSON.stringify(payload)
                     })
                         .then((res) => {
-                            if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+                            if (!res.ok && res.status !== 409) {
+                                throw new Error(`HTTP error: ${res.status}`);
+                            }
                             return res.json();
                         })
                         .then((data) => {
@@ -269,7 +287,8 @@ export default {
                             userSession.id = generatedId;
                             if (isDeveloper) {
                                 userSession.developer_id = generatedId;
-                                userSession.role = 'creator';
+                                userSession.role =
+                                    String(generatedId).toUpperCase() === 'D0000' ? 'admin' : 'creator';
                             } else {
                                 userSession.user_id = generatedId;
                                 userSession.role = 'user';
@@ -299,16 +318,24 @@ export default {
             this.loading = true;
 
             Promise.all([
-                fetch(`${baseApi}/user/email/${encodeURIComponent(mail)}`).then((r) => r.json()),
-                fetch(`${baseApi}/developer/email/${encodeURIComponent(mail)}`).then((r) => r.json())
+                fetch(`${baseApi}/user`).then((r) => r.json()),
+                fetch(`${baseApi}/developer`).then((r) => r.json())
             ])
                 .then(([users, devs]) => {
                     const matchedUser = Array.isArray(users)
-                        ? users.find((u) => u.email === mail && u.passwd === encodedPwd)
+                        ? users.find(
+                              (u) =>
+                                  String(u.email || '').trim().toLowerCase() === mail &&
+                                  u.passwd === encodedPwd
+                          )
                         : null;
 
                     const matchedDev = Array.isArray(devs)
-                        ? devs.find((d) => d.email === mail && d.passwd === encodedPwd)
+                        ? devs.find(
+                              (d) =>
+                                  String(d.email || '').trim().toLowerCase() === mail &&
+                                  d.passwd === encodedPwd
+                          )
                         : null;
 
                     if (matchedUser) {
@@ -326,7 +353,10 @@ export default {
                     } else if (matchedDev) {
                         const { passwd, ...devSession } = matchedDev;
                         devSession.id = matchedDev.developer_id;
-                        devSession.role = 'creator';
+                        devSession.role =
+                            String(matchedDev.developer_id).toUpperCase() === 'D0000'
+                                ? 'admin'
+                                : 'creator';
                         saveUser(devSession);
                         self.$router.push('/profile');
                     } else {

@@ -61,27 +61,59 @@
 
                     <!-- Player Reviews -->
                     <section class="reviews">
-                        <h2 class="section-heading">Player Signal</h2>
+                        <h2 class="section-heading">Player Signal ({{ reviews.length }})</h2>
 
                         <form class="review-form d-flex gap-2 mb-4" @submit.prevent="submitReview">
                             <input
                                 v-model="newReview"
                                 type="text"
-                                placeholder="Share your signal on this world..."
+                                :placeholder="activeAccountId ? 'Share your signal on this world...' : 'Log in to share your signal...'"
+                                :disabled="submittingReview"
                                 required
                             />
-                            <button type="submit" class="btn btn-primary">Post</button>
+                            <button type="submit" class="btn btn-primary" :disabled="submittingReview">
+                                {{ submittingReview ? 'Posting...' : 'Post' }}
+                            </button>
                         </form>
 
-                        <div class="d-grid gap-3">
-                            <article v-for="review in reviews" :key="review.id">
-                                <div class="review-head d-flex align-items-center gap-3 mb-3">
-                                    <div class="avatar">{{ review.initials }}</div>
-                                    <strong>{{ review.author }}</strong>
-                                </div>
-                                <p class="mb-0">{{ review.text }}</p>
-                            </article>
+                        <div v-if="loadingReviews" class="text-muted small">Loading signals...</div>
+                        <div v-else-if="reviews.length === 0" class="text-muted small">
+                            No signals transmitted for this game yet. Be the first!
                         </div>
+                        <template v-else>
+                            <div class="d-grid gap-3">
+                                <article v-for="review in paginatedReviews" :key="review.id">
+                                    <div class="review-head d-flex align-items-center justify-content-between mb-3">
+                                        <div class="d-flex align-items-center gap-3">
+                                            <div class="avatar">{{ review.initials }}</div>
+                                            <strong>{{ review.author }}</strong>
+                                        </div>
+                                        <span v-if="review.date" class="text-muted small">{{ review.date }}</span>
+                                    </div>
+                                    <p class="mb-0">{{ review.text }}</p>
+                                </article>
+                            </div>
+
+                            <div v-if="totalReviewPages > 1" class="d-flex justify-content-center mt-4">
+                                <Paginate
+                                    v-model="reviewPage"
+                                    :page-count="totalReviewPages"
+                                    :page-range="5"
+                                    :margin-pages="1"
+                                    :click-handler="onReviewPageChange"
+                                    prev-text="Prev"
+                                    next-text="Next"
+                                    container-class="pagination"
+                                    page-class="page-item"
+                                    page-link-class="page-link"
+                                    prev-class="page-item"
+                                    prev-link-class="page-link"
+                                    next-class="page-item"
+                                    next-link-class="page-link"
+                                    active-class="active"
+                                />
+                            </div>
+                        </template>
                     </section>
                 </div>
 
@@ -175,11 +207,15 @@
 </template>
 
 <script>
+import Paginate from 'vuejs-paginate-next';
 import { cpu } from '../api/cpuapi.js';
 import { gpu } from '../api/gpuapi.js';
 
 export default {
     name: 'GameDetail',
+    components: {
+        Paginate
+    },
     data() {
         return {
             baseUrl: import.meta.env.BASE_URL,
@@ -195,14 +231,11 @@ export default {
             addingToCart: false,
             addedToCart: false,
             cartError: '',
-            reviews: [
-                {
-                    id: 1,
-                    initials: 'RW',
-                    author: 'RivenArc',
-                    text: 'Every system feeds the fantasy. The city feels alive, the combat is precise, and I’m still finding new routes through old missions.'
-                }
-            ],
+            reviews: [],
+            reviewPage: 1,
+            reviewsPerPage: 6,
+            loadingReviews: false,
+            submittingReview: false,
             newReview: ''
         };
     },
@@ -253,6 +286,13 @@ export default {
         releaseYear() {
             if (!this.game || !this.game.release_date) return '';
             return String(this.game.release_date).split('-')[0];
+        },
+        totalReviewPages() {
+            return Math.max(1, Math.ceil(this.reviews.length / this.reviewsPerPage));
+        },
+        paginatedReviews() {
+            const start = (this.reviewPage - 1) * this.reviewsPerPage;
+            return this.reviews.slice(start, start + this.reviewsPerPage);
         },
         resolvedSpecs() {
             const fallback = [
@@ -425,6 +465,7 @@ export default {
             this.isFavorited = false;
             this.favId = null;
             this.cartError = '';
+            this.reviewPage = 1;
 
             const slug = this.$route.params.slug;
             const saved = sessionStorage.getItem('selectedGame');
@@ -436,6 +477,7 @@ export default {
                     this.resolveDeveloperName();
                     this.checkIfPurchased();
                     this.checkIfFavorited();
+                    this.loadReviews();
                     return;
                 }
             }
@@ -457,6 +499,7 @@ export default {
                         this.resolveDeveloperName();
                         this.checkIfPurchased();
                         this.checkIfFavorited();
+                        this.loadReviews();
                     } else {
                         this.err = 'Game not found.';
                     }
@@ -626,25 +669,122 @@ export default {
                     this.addingToCart = false;
                 });
         },
-        submitReview() {
-            const text = this.newReview.trim();
-            if (!text) return;
-
-            const authorName = this.currentUser?.username || 'PlayerOne';
-            const initials = authorName
+        getInitials(name) {
+            return String(name || 'PX')
                 .split(' ')
                 .map((w) => w[0])
                 .join('')
                 .slice(0, 2)
-                .toUpperCase();
+                .toUpperCase() || 'PX';
+        },
+        loadReviews() {
+            const gid = String(this.game?.game_id || '').trim();
+            if (!gid) return;
 
-            this.reviews.unshift({
-                id: Date.now(),
-                initials: initials || 'PX',
-                author: authorName,
-                text
-            });
-            this.newReview = '';
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
+            this.loadingReviews = true;
+
+            Promise.all([
+                fetch(`${baseApi}/review/game_id/${encodeURIComponent(gid)}`).then((r) => r.json()),
+                fetch(`${baseApi}/user`).then((r) => r.json()).catch(() => []),
+                fetch(`${baseApi}/developer`).then((r) => r.json()).catch(() => [])
+            ])
+                .then(([reviewRows, users, devs]) => {
+                    const rows = Array.isArray(reviewRows) ? reviewRows : [];
+                    const userList = Array.isArray(users) ? users : [];
+                    const devList = Array.isArray(devs) ? devs : [];
+
+                    // Show newest reviews first
+                    this.reviews = rows
+                        .slice()
+                        .reverse()
+                        .map((r) => {
+                            const uid = String(r.user_id || '').trim();
+                            const matchedUser = userList.find((u) => String(u.user_id).trim() === uid);
+                            const matchedDev = devList.find((d) => String(d.developer_id).trim() === uid);
+                            const author = matchedUser?.username || matchedDev?.username || uid || 'Player';
+
+                            return {
+                                id: r.review_id,
+                                initials: this.getInitials(author),
+                                author,
+                                date: r.date || '',
+                                text: r.content
+                            };
+                        });
+                    this.reviewPage = 1;
+                })
+                .catch(() => {
+                    this.reviews = [];
+                })
+                .finally(() => {
+                    this.loadingReviews = false;
+                });
+        },
+        onReviewPageChange(pageNum) {
+            this.reviewPage = Number(pageNum);
+        },
+        submitReview() {
+            this.loadUser();
+            const uid = this.activeAccountId;
+
+            if (!uid) {
+                this.$router.push('/login');
+                return;
+            }
+
+            const gid = String(this.game?.game_id || '').trim();
+            const text = this.newReview.trim();
+            if (!gid || !text) return;
+
+            const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
+            this.submittingReview = true;
+
+            fetch(`${baseApi}/review`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    user_id: uid,
+                    game_id: gid,
+                    date: today,
+                    content: text
+                })
+            })
+                .then((res) => {
+                    if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+                    return res.json();
+                })
+                .then((data) => {
+                    if (data.error) throw new Error(data.error);
+
+                    const authorName = this.currentUser?.username || uid;
+                    this.reviews.unshift({
+                        id: data.review_id || Date.now(),
+                        initials: this.getInitials(authorName),
+                        author: authorName,
+                        date: today,
+                        text
+                    });
+                    this.reviewPage = 1;
+                    this.newReview = '';
+
+                    window.dispatchEvent(
+                        new CustomEvent('show-toast', {
+                            detail: { message: 'Review posted!', type: 'success' }
+                        })
+                    );
+                })
+                .catch((error) => {
+                    window.dispatchEvent(
+                        new CustomEvent('show-toast', {
+                            detail: { message: 'Failed to post review: ' + error.message, type: 'error' }
+                        })
+                    );
+                })
+                .finally(() => {
+                    this.submittingReview = false;
+                });
         }
     }
 };
@@ -831,6 +971,26 @@ export default {
     color: #b4b8c3;
     line-height: 1.7;
     font-size: 14px;
+}
+
+:deep(.pagination) {
+    gap: 8px;
+}
+
+:deep(.page-link) {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    color: #fff;
+    padding: 8px 14px;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+:deep(.page-item.active .page-link) {
+    background: var(--cyan);
+    border-color: var(--cyan);
+    color: #05060a;
+    font-weight: 700;
 }
 
 /* Buy Card */

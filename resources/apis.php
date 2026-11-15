@@ -15,7 +15,7 @@ try {
         $pathInfo = trim(substr($uriPath, strlen($scriptName)), '/');
     }
 
-    $request = $pathInfo !== '' ? explode('/', $pathInfo) : [];
+    $request = $pathInfo !== '' ? explode('/', $pathInfo) : array();
     $input = json_decode(file_get_contents('php://input'), true);
 
     // Mercury database connection
@@ -24,14 +24,14 @@ try {
 
     if (!$conn) {
         http_response_code(500);
-        echo json_encode(['error' => 'Database connection failed: ' . mysqli_connect_error()]);
+        echo json_encode(array('error' => 'Database connection failed: ' . mysqli_connect_error()));
         exit;
     }
 
     mysqli_set_charset($conn, 'utf8mb4');
 
     // Whitelist allowed tables
-    $allowedTables = ['game', 'cart', 'developer', 'favourite', 'payment', 'user'];
+    $allowedTables = array('game', 'cart', 'developer', 'favourite', 'payment', 'user', 'review');
 
     // First segment is table name; default to 'game' if omitted
     $firstSegment = isset($request[0]) ? preg_replace('/[^a-z0-9_]+/i', '', $request[0]) : '';
@@ -43,18 +43,19 @@ try {
     }
 
     // Auto-generate next sequential ID on POST if missing or empty
-    $idConfigs = [
-        'game'      => ['col' => 'game_id',      'prefix' => 'G'],
-        'user'      => ['col' => 'user_id',      'prefix' => 'U'],
-        'developer' => ['col' => 'developer_id', 'prefix' => 'D'],
-        'cart'      => ['col' => 'cart_id',      'prefix' => 'C'],
-        'payment'   => ['col' => 'payment_id',   'prefix' => 'P'],
-        'favourite' => ['col' => 'fav_id',       'prefix' => 'F']
-    ];
+    $idConfigs = array(
+        'game'      => array('col' => 'game_id',      'prefix' => 'G'),
+        'user'      => array('col' => 'user_id',      'prefix' => 'U'),
+        'developer' => array('col' => 'developer_id', 'prefix' => 'D'),
+        'cart'      => array('col' => 'cart_id',      'prefix' => 'C'),
+        'payment'   => array('col' => 'payment_id',   'prefix' => 'P'),
+        'favourite' => array('col' => 'fav_id',       'prefix' => 'F'),
+        'review'    => array('col' => 'review_id',    'prefix' => 'R')
+    );
 
     if ($method === 'POST' && isset($idConfigs[$table])) {
         if (!is_array($input)) {
-            $input = [];
+            $input = array();
         }
 
         $idCol = $idConfigs[$table]['col'];
@@ -81,7 +82,7 @@ try {
 
     // Convert Base64 data URIs into raw binary bytes for BLOB columns (image & avatar)
     if (is_array($input)) {
-        foreach (['image', 'avatar'] as $blobCol) {
+        foreach (array('image', 'avatar') as $blobCol) {
             if (isset($input[$blobCol]) && is_string($input[$blobCol]) && $input[$blobCol] !== '') {
                 if (preg_match('/^data:image\/[a-zA-Z0-9.+-]+;base64,(.*)$/s', $input[$blobCol], $matches)) {
                     $decoded = base64_decode($matches[1]);
@@ -98,16 +99,43 @@ try {
     $key = array_shift($request);
     $escapedKey = $key !== null ? mysqli_real_escape_string($conn, (string) urldecode($key)) : null;
 
+    // Prevent duplicate emails across BOTH `user` and `developer` tables on POST / PUT
+    if (($method === 'POST' || $method === 'PUT') && in_array($table, array('user', 'developer'), true) && is_array($input) && !empty($input['email'])) {
+        $cleanEmail = strtolower(trim((string) $input['email']));
+        $input['email'] = $cleanEmail;
+        $escEmail = mysqli_real_escape_string($conn, $cleanEmail);
+
+        $excludeUser = ($method === 'PUT' && $table === 'user' && $fld === 'user_id' && $escapedKey !== null)
+            ? " AND `user_id` != '$escapedKey'"
+            : '';
+        $excludeDev = ($method === 'PUT' && $table === 'developer' && $fld === 'developer_id' && $escapedKey !== null)
+            ? " AND `developer_id` != '$escapedKey'"
+            : '';
+
+        $uCheck = mysqli_query($conn, "SELECT 1 FROM `user` WHERE LOWER(TRIM(`email`)) = '$escEmail'$excludeUser LIMIT 1");
+        $dCheck = mysqli_query($conn, "SELECT 1 FROM `developer` WHERE LOWER(TRIM(`email`)) = '$escEmail'$excludeDev LIMIT 1");
+
+        if (($uCheck && mysqli_num_rows($uCheck) > 0) || ($dCheck && mysqli_num_rows($dCheck) > 0)) {
+            http_response_code(409);
+            echo json_encode(array('error' => 'This email is already registered as a Player or Creator.'));
+            mysqli_close($conn);
+            exit;
+        }
+    }
+
     // Prepare SET clause for PUT / POST
     $set = '';
     if (is_array($input) && count($input) > 0) {
         $columns = preg_replace('/[^a-z0-9_]+/i', '', array_keys($input));
         $values = array_map(function ($value) use ($conn) {
             if ($value === null) return null;
+            if (is_array($value)) {
+                $value = json_encode($value);
+            }
             return mysqli_real_escape_string($conn, (string) $value);
         }, array_values($input));
 
-        $parts = [];
+        $parts = array();
         for ($i = 0; $i < count($columns); $i++) {
             if ($columns[$i] === '') continue;
             $valSql = $values[$i] === null ? 'NULL' : '"' . $values[$i] . '"';
@@ -135,7 +163,7 @@ try {
             break;
         default:
             http_response_code(405);
-            echo json_encode(['error' => 'Method not allowed']);
+            echo json_encode(array('error' => 'Method not allowed'));
             mysqli_close($conn);
             exit;
     }
@@ -144,9 +172,9 @@ try {
 
     if ($result) {
         if ($method === 'GET') {
-            $rows = [];
+            $rows = array();
             while ($row = mysqli_fetch_assoc($result)) {
-                foreach (['image', 'avatar'] as $blobCol) {
+                foreach (array('image', 'avatar') as $blobCol) {
                     if (isset($row[$blobCol]) && $row[$blobCol] !== null && $row[$blobCol] !== '') {
                         if (!preg_match('/^(https?:\/\/|data:image\/)/i', $row[$blobCol])) {
                             $mime = 'image/jpeg';
@@ -166,7 +194,7 @@ try {
             }
             echo json_encode($rows);
         } elseif ($method === 'POST') {
-            $response = ['insert_id' => mysqli_insert_id($conn)];
+            $response = array('insert_id' => mysqli_insert_id($conn));
             if (isset($idConfigs[$table])) {
                 $idCol = $idConfigs[$table]['col'];
                 if (isset($input[$idCol])) {
@@ -175,16 +203,16 @@ try {
             }
             echo json_encode($response);
         } else {
-            echo json_encode(['affected_rows' => mysqli_affected_rows($conn)]);
+            echo json_encode(array('affected_rows' => mysqli_affected_rows($conn)));
         }
     } else {
         http_response_code(400);
-        echo json_encode(['error' => mysqli_error($conn)]);
+        echo json_encode(array('error' => mysqli_error($conn)));
     }
 
     mysqli_close($conn);
-} catch (Throwable $e) {
+} catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['error' => $e->getMessage()]);
+    echo json_encode(array('error' => $e->getMessage()));
 }
 ?>
