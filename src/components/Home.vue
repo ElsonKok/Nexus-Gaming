@@ -348,11 +348,6 @@ const isLoggedIn = computed(() => {
             </div>
         </section>
 
-        <!-- Attribution required by the FreeToGame API terms once the game data comes from it -->
-        <div class="api-attribution">
-            Game information provided by
-            <a href="https://www.freetogame.com/" target="_blank" rel="noopener noreferrer">FreeToGame</a>
-        </div>
     </main>
 </template>
 
@@ -937,21 +932,6 @@ a {
     flex-wrap: wrap;
 }
 
-.api-attribution {
-    text-align: center;
-    padding: 15px;
-    color: var(--muted);
-    font-size: 11px;
-    background: var(--bg);
-}
-
-.api-attribution a {
-    color: var(--cyan);
-}
-
-.api-attribution a:hover {
-    text-decoration: underline;
-}
 
 /* ---------- small screens ---------- */
 @media (max-width: 767px) {

@@ -218,6 +218,19 @@ export default {
 
     <router-view></router-view>
 
+    <!-- Global Footer -->
+    <footer class="site-footer">
+        <div class="container footer-container">
+            <div class="footer-left d-flex align-items-center gap-3">
+                <span class="footer-logo">🎮 NEXUS</span>
+                <p class="mb-0">Curated worlds. Built for players.</p>
+            </div>
+            <div class="footer-right">
+                <span class="copyright-text">© 2025 Nexus Interactive</span>
+            </div>
+        </div>
+    </footer>
+
     <!-- Global Nexus Toast -->
     <Transition name="nexus-toast">
         <div
@@ -479,6 +492,45 @@ export default {
         right: 16px;
         left: 16px;
         bottom: 16px;
+    }
+}
+
+.site-footer {
+    background: rgba(8, 10, 15, 0.95);
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    padding: 24px max(4vw, 28px);
+    margin-top: auto;
+    font-size: 13px;
+}
+
+.footer-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.footer-logo {
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    color: #ffffff;
+}
+
+.footer-left p {
+    color: #e2e8f0;
+    font-weight: 500;
+}
+
+.copyright-text {
+    color: #cbd5e1;
+    font-weight: 500;
+}
+
+@media (max-width: 600px) {
+    .footer-container {
+        flex-direction: column;
+        text-align: center;
     }
 }
 </style>
