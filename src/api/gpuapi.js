@@ -1,4 +1,4 @@
-export const cpu = [
+export const gpu = [
   { id: 30, manufacturer: "AMD", name: "Athlon 64 FX-57" },
   { id: 86, manufacturer: "AMD", name: "Athlon XP 3200+ (400FSB)" },
   { id: 275, manufacturer: "Intel", name: "Pentium 4 HT 3.06" },
