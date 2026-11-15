@@ -55,22 +55,18 @@ export default {
         isAllowed() {
             if (!this.game || !this.currentUser) return false;
 
-            const role = String(this.currentUser.role || '').toLowerCase();
-            if (role === 'admin') return true;
-
-            const isCreator =
-                role === 'creator' ||
-                role === 'developer' ||
-                Boolean(this.currentUser.developer_id);
-
-            if (!isCreator) return false;
-
-            const gameDev = String(this.game.developer || '').trim().toLowerCase();
             const devId = String(this.currentUser.developer_id || '').trim().toLowerCase();
+            if (!devId) return false;
+
+            // Admin developer account (D0000) can edit all games
+            if (devId === 'd0000') return true;
+
+            // Regular developers can only edit their own games
+            const gameDev = String(this.game.developer || '').trim().toLowerCase();
             const devUsername = String(this.currentUser.username || '').trim().toLowerCase();
 
             return (
-                (devId && gameDev === devId) ||
+                gameDev === devId ||
                 (devUsername && gameDev === devUsername)
             );
         }

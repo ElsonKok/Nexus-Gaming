@@ -129,6 +129,71 @@ export default {
                 this.$refs.avatarInput.value = '';
             }
         },
+        async sha256Hex(text) {
+            if (!window.crypto?.subtle) return '';
+            const data = new TextEncoder().encode(text);
+            const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
+            return Array.from(new Uint8Array(hashBuffer))
+                .map((b) => b.toString(16).padStart(2, '0'))
+                .join('');
+        },
+        async verifyCurrentPassword(baseApi, table, idCol, accountId) {
+            const plain = this.currentPassword;
+
+            // Fetch database record (checking both user and developer tables as fallback)
+            let dbUser = null;
+            const checkRes = await fetch(`${baseApi}/${table}/${idCol}/${encodeURIComponent(accountId)}`);
+            if (checkRes.ok) {
+                const rows = await checkRes.json();
+                dbUser = Array.isArray(rows) ? rows[0] : rows;
+            }
+
+            if (!dbUser) {
+                const altTable = table === 'developer' ? 'user' : 'developer';
+                const altCol = altTable === 'developer' ? 'developer_id' : 'user_id';
+                const altRes = await fetch(`${baseApi}/${altTable}/${altCol}/${encodeURIComponent(accountId)}`);
+                if (altRes.ok) {
+                    const altRows = await altRes.json();
+                    dbUser = Array.isArray(altRows) ? altRows[0] : altRows;
+                }
+            }
+
+            if (!dbUser) {
+                return { valid: false, encoding: 'plain', passwordCol: 'password' };
+            }
+
+            // Detect whether the table column is named 'passwd' or 'password'
+            const passwordCol = Object.prototype.hasOwnProperty.call(dbUser, 'passwd')
+                ? 'passwd'
+                : 'password';
+            const stored = String(dbUser[passwordCol] ?? '').trim();
+
+            if (!stored) {
+                return { valid: false, encoding: 'plain', passwordCol };
+            }
+
+            // 1. Plain text match
+            if (stored === plain) {
+                return { valid: true, encoding: 'plain', passwordCol };
+            }
+
+            // 2. Base64 encoded match (btoa)
+            try {
+                if (stored === btoa(plain)) {
+                    return { valid: true, encoding: 'base64', passwordCol };
+                }
+            } catch {
+                // Ignore non-Latin1 characters
+            }
+
+            // 3. SHA-256 hex match
+            const shaHex = await this.sha256Hex(plain);
+            if (shaHex && stored.toLowerCase() === shaHex.toLowerCase()) {
+                return { valid: true, encoding: 'sha256', passwordCol };
+            }
+
+            return { valid: false, encoding: 'plain', passwordCol };
+        },
         async saveProfile() {
             this.errorMessage = '';
             this.successMessage = '';
@@ -184,21 +249,24 @@ export default {
             this.saving = true;
 
             try {
-                if (wantsPasswordChange) {
-                    const checkRes = await fetch(
-                        `${baseApi}/${table}/${idCol}/${encodeURIComponent(accountId)}`
-                    );
-                    if (!checkRes.ok) {
-                        throw new Error(`HTTP error: ${checkRes.status}`);
-                    }
-                    const rows = await checkRes.json();
-                    const dbUser = Array.isArray(rows) ? rows[0] : rows;
+                let detectedEncoding = 'plain';
+                let passwordCol = 'password';
 
-                    if (!dbUser || String(dbUser.password ?? '') !== this.currentPassword) {
+                if (wantsPasswordChange) {
+                    const verification = await this.verifyCurrentPassword(
+                        baseApi,
+                        table,
+                        idCol,
+                        accountId
+                    );
+
+                    if (!verification.valid) {
                         this.errorMessage = 'Current password is incorrect.';
                         this.saving = false;
                         return;
                     }
+                    detectedEncoding = verification.encoding;
+                    passwordCol = verification.passwordCol;
                 }
 
                 const payload = {
@@ -211,7 +279,13 @@ export default {
                 }
 
                 if (wantsPasswordChange) {
-                    payload.password = this.newPassword;
+                    if (detectedEncoding === 'base64') {
+                        payload[passwordCol] = btoa(this.newPassword);
+                    } else if (detectedEncoding === 'sha256') {
+                        payload[passwordCol] = await this.sha256Hex(this.newPassword);
+                    } else {
+                        payload[passwordCol] = this.newPassword;
+                    }
                 }
 
                 const updateRes = await fetch(
@@ -393,7 +467,7 @@ export default {
                             v-model="currentPassword"
                             :type="showPasswords ? 'text' : 'password'"
                             placeholder="Enter current password"
-                            autocomplete="current-password"
+                            autocomplete="off"
                         />
                     </div>
 

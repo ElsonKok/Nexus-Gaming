@@ -94,7 +94,7 @@
                             <span v-else-if="isFree" class="free-badge">FREE TO PLAY</span>
                         </div>
 
-                        <!-- Already Owned / Claimed State -->
+                        <!-- Already Owned State -->
                         <router-link
                             v-if="isPurchased"
                             to="/profile"
@@ -103,18 +103,7 @@
                             ✓ Owned · View in Library →
                         </router-link>
 
-                        <!-- Free Game Claim State -->
-                        <button
-                            v-else-if="isFree"
-                            type="button"
-                            class="btn btn-primary w-100"
-                            :disabled="claimingFree"
-                            @click="claimFreeGame"
-                        >
-                            {{ claimingFree ? 'Claiming...' : '+ Claim Free Game' }}
-                        </button>
-
-                        <!-- Paid Game Add to Cart State -->
+                        <!-- Free or Paid Add to Cart State -->
                         <button
                             v-else
                             type="button"
@@ -122,8 +111,16 @@
                             :disabled="addingToCart"
                             @click="addToCart"
                         >
-                            <img src="/cart.svg" alt="" width="18" height="18" />
-                            {{ addingToCart ? 'Adding...' : (addedToCart ? 'Added to Cart' : 'Add to Cart') }}
+                            <img v-if="!isFree" :src="`${baseUrl}cart.svg`" alt="" width="18" height="18" />
+                            {{
+                                addingToCart
+                                    ? 'Adding...'
+                                    : addedToCart
+                                        ? 'Added to Cart'
+                                        : isFree
+                                            ? '+ Claim Free Game'
+                                            : 'Add to Cart'
+                            }}
                         </button>
 
                         <p v-if="cartError" class="text-danger small mb-0">{{ cartError }}</p>
@@ -182,6 +179,7 @@ export default {
     name: 'GameDetail',
     data() {
         return {
+            baseUrl: import.meta.env.BASE_URL,
             currentUser: null,
             game: null,
             developerName: '',
@@ -191,7 +189,6 @@ export default {
             favId: null,
             togglingFav: false,
             isPurchased: false,
-            claimingFree: false,
             addingToCart: false,
             addedToCart: false,
             cartError: '',
@@ -412,62 +409,6 @@ export default {
                     this.loading = false;
                 });
         },
-        claimFreeGame() {
-            this.cartError = '';
-            this.loadUser();
-
-            const uid = String(this.currentUser?.user_id || this.currentUser?.id || '').trim();
-            if (!uid) {
-                this.$router.push('/login');
-                return;
-            }
-
-            if (this.isCreator) {
-                this.cartError = 'Creator accounts cannot claim games.';
-                return;
-            }
-
-            const gid = String(this.game?.game_id || '').trim();
-            if (!gid) {
-                this.cartError = 'Invalid game ID.';
-                return;
-            }
-
-            const now = new Date();
-            const paymentDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
-
-            this.claimingFree = true;
-            fetch(`${baseApi}/payment`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    user_id: uid,
-                    game_id: gid,
-                    payment_date: paymentDate,
-                    amount: 0
-                })
-            })
-                .then((res) => {
-                    if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
-                    return res.json();
-                })
-                .then((data) => {
-                    if (data.error) throw new Error(data.error);
-                    this.isPurchased = true;
-                    window.dispatchEvent(
-                        new CustomEvent('show-toast', {
-                            detail: { message: `${this.game.title} added to your library!`, type: 'success' }
-                        })
-                    );
-                })
-                .catch((error) => {
-                    this.cartError = 'Could not claim game: ' + error.message;
-                })
-                .finally(() => {
-                    this.claimingFree = false;
-                });
-        },
         toggleFavourite() {
             this.loadUser();
             const uid = this.activeAccountId;
@@ -555,11 +496,6 @@ export default {
                 return;
             }
 
-            if (this.isFree) {
-                this.claimFreeGame();
-                return;
-            }
-
             const uid = String(this.currentUser?.user_id || this.currentUser?.id || '').trim();
             if (!uid) {
                 this.$router.push('/login');
@@ -623,7 +559,6 @@ export default {
                             detail: { message: `${this.game.title} added to cart`, type: 'success' }
                         })
                     );
-                    setTimeout(() => this.$router.push('/cart'), 400);
                 })
                 .catch((error) => {
                     this.cartError = 'Could not add to cart: ' + error.message;
