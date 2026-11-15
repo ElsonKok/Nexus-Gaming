@@ -169,6 +169,10 @@ export default {
             pageSize: 6
         };
     },
+    created() {
+        // apply ?search=, ?category= and ?sort= (the links on the Home page)
+        this.applyQuery();
+    },
     mounted() {
         this.loadUser();
         this.readData();
@@ -212,6 +216,9 @@ export default {
             return this.filteredGames.slice(start, start + this.pageSize);
         }
     },
+    '$route.query'() {
+        this.applyQuery();
+    },
     watch: {
         search() {
             this.currentPage = 1;
@@ -231,6 +238,13 @@ export default {
         sortBy() {
             this.currentPage = 1;
         }
+    },
+    applyQuery() {
+        const q = this.$route.query;
+        this.search = typeof q.search === 'string' ? q.search : '';
+        // "Action RPG" and "action-rpg" both work
+        this.selectedGenre = typeof q.category === 'string' ? this.toSlug(q.category) : '';
+        this.sortBy = ['rating', 'price-low', 'date'].includes(q.sort) ? q.sort : 'rating';
     },
     methods: {
         loadUser() {
