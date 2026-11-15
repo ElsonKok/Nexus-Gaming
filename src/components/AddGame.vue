@@ -154,7 +154,7 @@ export default {
                 rating: Number(this.form.rating) || 0
             };
 
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
             this.submitting = true;
 
             fetch(`${baseApi}/game`, {

@@ -269,7 +269,8 @@ export default {
             this.$router.push(`/game/${this.toSlug(game.title)}`);
         },
         readData() {
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
+            console.log(baseApi);
             const uid = this.activeAccountId;
 
             this.loading = true;
@@ -338,7 +339,7 @@ export default {
                 return;
             }
 
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
             const gid = String(game.game_id).trim();
             game.togglingFav = true;
 

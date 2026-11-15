@@ -7,24 +7,20 @@ header('Content-Type: application/json; charset=utf-8');
 try {
     $method = $_SERVER['REQUEST_METHOD'];
 
-    // Safely extract PATH_INFO even if Apache passes it via REQUEST_URI
+    // Extract path segments after /cos30043/s106200220/Project/resources/apis.php
+    $uriPath = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+    $scriptName = $_SERVER['SCRIPT_NAME'];
     $pathInfo = '';
-    if (!empty($_SERVER['PATH_INFO'])) {
-        $pathInfo = trim($_SERVER['PATH_INFO'], '/');
-    } elseif (!empty($_SERVER['REQUEST_URI'])) {
-        $uriPath = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
-        $scriptName = $_SERVER['SCRIPT_NAME'];
-        if (strpos($uriPath, $scriptName) === 0) {
-            $pathInfo = trim(substr($uriPath, strlen($scriptName)), '/');
-        }
+    if (strpos($uriPath, $scriptName) === 0) {
+        $pathInfo = trim(substr($uriPath, strlen($scriptName)), '/');
     }
 
     $request = $pathInfo !== '' ? explode('/', $pathInfo) : [];
     $input = json_decode(file_get_contents('php://input'), true);
 
-    // Database connection (switch credentials when deploying to Mercury)
-    // $conn = mysqli_connect('feenix-mariadb.swin.edu.au', 's106200220', '280904', 's106200220_db');
-    $conn = mysqli_connect('localhost', 'root', '', 'nexus');
+    // Mercury database connection
+    $conn = mysqli_connect('feenix-mariadb.swin.edu.au', 's106200220', '280904', 's106200220_db');
+    //$conn = mysqli_connect('localhost', 'root', '', 'nexus');
 
     if (!$conn) {
         http_response_code(500);

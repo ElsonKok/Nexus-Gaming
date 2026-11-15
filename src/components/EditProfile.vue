@@ -60,7 +60,7 @@ export default {
             }
         },
         async fetchLatestAccount() {
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
             const table = this.isDeveloper ? 'developer' : 'user';
             const idCol = this.isDeveloper ? 'developer_id' : 'user_id';
             const accountId = String(
@@ -167,7 +167,7 @@ export default {
                 }
             }
 
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
             const table = this.isDeveloper ? 'developer' : 'user';
             const idCol = this.isDeveloper ? 'developer_id' : 'user_id';
             const accountId = String(

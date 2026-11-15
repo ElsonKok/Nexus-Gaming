@@ -46,7 +46,7 @@ export default {
             }
         },
         fetchCart() {
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
             this.loading = true;
             this.err = '';
 
@@ -107,7 +107,7 @@ export default {
             const prevQty = item.quantity;
             item.quantity = next;
 
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `./resources/apis.php`;
             fetch(`${baseApi}/cart/cart_id/${encodeURIComponent(item.cart_id)}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -121,7 +121,7 @@ export default {
                 });
         },
         removeItem(item) {
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
             const idsToDelete = [item.cart_id, ...(item.extraCartIds || [])].filter(Boolean);
 
             this.cartItems = this.cartItems.filter((i) => i.cart_id !== item.cart_id);

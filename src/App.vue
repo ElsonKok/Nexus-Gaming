@@ -64,7 +64,7 @@ export default {
                 return;
             }
 
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
             fetch(`${baseApi}/cart/user_id/${encodeURIComponent(uid)}`)
                 .then((res) => res.json())
                 .then((data) => {

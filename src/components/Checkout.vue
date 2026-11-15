@@ -82,7 +82,7 @@ export default {
 
             if (!this.userId) return;
 
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
             Promise.all([
                 fetch(`${baseApi}/cart/user_id/${encodeURIComponent(this.userId)}`).then((r) => r.json()),
                 fetch(`${baseApi}/game`).then((r) => r.json())
@@ -150,7 +150,7 @@ export default {
                 // Build base app URL supporting both hash (#/checkout) and history (/checkout) router modes
                 const appBase = window.location.href.split('/checkout')[0];
 
-                const res = await fetch('/resources/checkout.php', {
+                const res = await fetch(`${import.meta.env.BASE_URL}resources/checkout.php`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -161,6 +161,8 @@ export default {
                         returnUrl: appBase
                     })
                 });
+                console.log(appBase);
+                console.log(res);
 
                 const data = await res.json();
 
@@ -175,13 +177,14 @@ export default {
                 }
             } catch (err) {
                 this.errorMsg = 'Payment redirect failed: ' + err.message;
+                console.log(this.errorMsg);
                 this.isProcessing = false;
             }
         },
         finalizeOrderAfterStripe() {
             if (!this.userId || !this.items.length) return;
 
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
             const today = new Date().toISOString().split('T')[0];
             this.isProcessing = true;
             this.activeStep = 2;

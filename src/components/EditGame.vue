@@ -115,7 +115,7 @@ export default {
                 return;
             }
 
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
             this.loading = true;
             this.errorMessage = '';
 
@@ -236,7 +236,7 @@ export default {
                 payload.image = this.form.image || null;
             }
 
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
             this.submitting = true;
 
             fetch(`${baseApi}/game/game_id/${encodeURIComponent(this.game.game_id)}`, {

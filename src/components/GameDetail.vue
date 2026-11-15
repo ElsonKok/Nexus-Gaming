@@ -301,7 +301,7 @@ export default {
 
             if (!rawDev) return;
 
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
             fetch(`${baseApi}/developer`)
                 .then((res) => res.json())
                 .then((devs) => {
@@ -324,7 +324,7 @@ export default {
 
             if (!uid || !gid || this.isCreator) return;
 
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
             fetch(`${baseApi}/payment/user_id/${encodeURIComponent(uid)}`)
                 .then((res) => res.json())
                 .then((rows) => {
@@ -347,7 +347,7 @@ export default {
 
             if (!uid || !gid) return;
 
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
             fetch(`${baseApi}/favourite/user_id/${encodeURIComponent(uid)}`)
                 .then((res) => res.json())
                 .then((rows) => {
@@ -385,7 +385,7 @@ export default {
             }
 
             // Fallback if opened directly or refreshed at /game/:slug
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
             this.loading = true;
             fetch(`${baseApi}/game`)
                 .then((res) => {
@@ -435,7 +435,7 @@ export default {
 
             const now = new Date();
             const paymentDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
 
             this.claimingFree = true;
             fetch(`${baseApi}/payment`, {
@@ -480,7 +480,7 @@ export default {
             const gid = String(this.game?.game_id || '').trim();
             if (!gid) return;
 
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
             this.togglingFav = true;
 
             if (this.isFavorited && this.favId) {
@@ -577,7 +577,7 @@ export default {
                 return;
             }
 
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
             this.addingToCart = true;
 
             // Check if this game is already in the user's cart

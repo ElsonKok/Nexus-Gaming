@@ -57,7 +57,7 @@ export default {
             }
         },
         fetchFavourites() {
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
             this.loading = true;
             this.err = '';
 
@@ -111,7 +111,7 @@ export default {
                 });
         },
         removeFavorite(item, silent = false) {
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
             const previous = [...this.favorites];
 
             this.favorites = this.favorites.filter((f) => f.fav_id !== item.fav_id);
@@ -160,7 +160,7 @@ export default {
                 return;
             }
 
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
             this.movingId = item.fav_id;
 
             fetch(`${baseApi}/cart/user_id/${encodeURIComponent(this.userId)}`)

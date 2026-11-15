@@ -463,7 +463,7 @@ export default {
             sessionStorage.setItem('selectedGame', JSON.stringify(game));
         },
         fetchDashboardData() {
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
             this.loading = true;
             this.err = '';
 
@@ -499,7 +499,7 @@ export default {
             );
             if (!confirmed) return;
 
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
 
             fetch(`${baseApi}/game/game_id/${encodeURIComponent(gameId)}`, {
                 method: 'DELETE'

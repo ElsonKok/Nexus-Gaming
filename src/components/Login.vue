@@ -210,7 +210,7 @@ export default {
         },
 
         registerAccount(uname, mail, encodedPwd, selectedRole) {
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
             const isDeveloper = selectedRole === 'creator';
             const targetTable = isDeveloper ? 'developer' : 'user';
             const self = this;
@@ -294,7 +294,7 @@ export default {
         },
 
         loginAccount(mail, encodedPwd) {
-            const baseApi = `/resources/apis.php`;
+            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
             const self = this;
             this.loading = true;
 
