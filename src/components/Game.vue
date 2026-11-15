@@ -216,10 +216,11 @@ export default {
             return this.filteredGames.slice(start, start + this.pageSize);
         }
     },
-    '$route.query'() {
-        this.applyQuery();
-    },
+
     watch: {
+        '$route.query'() {
+            this.applyQuery();
+        },
         search() {
             this.currentPage = 1;
         },
@@ -239,14 +240,14 @@ export default {
             this.currentPage = 1;
         }
     },
-    applyQuery() {
-        const q = this.$route.query;
-        this.search = typeof q.search === 'string' ? q.search : '';
-        // "Action RPG" and "action-rpg" both work
-        this.selectedGenre = typeof q.category === 'string' ? this.toSlug(q.category) : '';
-        this.sortBy = ['rating', 'price-low', 'date'].includes(q.sort) ? q.sort : 'rating';
-    },
+
     methods: {
+        applyQuery() {
+            const q = this.$route.query;
+            this.search = typeof q.search === 'string' ? q.search : '';
+            this.selectedGenre = typeof q.category === 'string' ? this.toSlug(q.category) : '';
+            this.sortBy = ['rating', 'price-low', 'date'].includes(q.sort) ? q.sort : 'rating';
+        },
         loadUser() {
             try {
                 this.currentUser =
