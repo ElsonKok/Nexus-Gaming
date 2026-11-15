@@ -174,7 +174,7 @@ export default {
             <!-- Admin Quick Action -->
             <router-link
                 v-if="currentUser.role === 'admin'"
-                to="/admin"
+                to="/profile"
                 class="text-decoration-none cta-btn"
             >
                 Admin Panel
