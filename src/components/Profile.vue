@@ -30,7 +30,7 @@
                         <div class="profile-stats">
                             <span>
                                 <strong>
-                                    {{ isAdmin ? adminGames.length :
+                                    {{ isAdmin ? games.length :
                                        isCreator ? creatorGames.length :
                                        purchasedGames.length }}
                                 </strong>
@@ -219,257 +219,8 @@
 
                 </template>
 
-                <!-- Admin Dashboard (D0000) -->
-                <template v-else-if="isAdmin">
-
-                    <div class="section-heading">
-                        <div>
-                            <span class="section-subtitle">COMMAND CENTER</span>
-                            <h2>Admin Dashboard</h2>
-                            <p>Full marketplace oversight, catalog control, and account directory.</p>
-                        </div>
-
-                        <router-link
-                            to="/games/add"
-                            class="add-game-btn"
-                        >
-                            + Publish New Game
-                        </router-link>
-                    </div>
-
-                    <!-- Live KPI Cards -->
-                    <div class="row g-3 mb-5">
-
-                        <div class="col-12 col-sm-6 col-lg-3">
-                            <div class="admin-stat-card">
-                                <div class="stat-top">
-                                    <span>TOTAL GAMES</span>
-                                    <span class="stat-icon">🕹️</span>
-                                </div>
-                                <h3>{{ adminGames.length }}</h3>
-                                <small>Active catalog listings</small>
-                            </div>
-                        </div>
-
-                        <div class="col-12 col-sm-6 col-lg-3">
-                            <div class="admin-stat-card">
-                                <div class="stat-top">
-                                    <span>REGISTERED USERS</span>
-                                    <span class="stat-icon">👥</span>
-                                </div>
-                                <h3>{{ users.length }}</h3>
-                                <small>Player accounts on Nexus</small>
-                            </div>
-                        </div>
-
-                        <div class="col-12 col-sm-6 col-lg-3">
-                            <div class="admin-stat-card">
-                                <div class="stat-top">
-                                    <span>DEVELOPERS</span>
-                                    <span class="stat-icon">🛠️</span>
-                                </div>
-                                <h3>{{ developers.length }}</h3>
-                                <small>Verified studio accounts</small>
-                            </div>
-                        </div>
-
-                        <div class="col-12 col-sm-6 col-lg-3">
-                            <div class="admin-stat-card stat-highlight">
-                                <div class="stat-top">
-                                    <span>TOTAL REVENUE</span>
-                                    <span class="stat-icon">💎</span>
-                                </div>
-                                <h3>RM {{ totalRevenue.toFixed(2) }}</h3>
-                                <small>Across {{ payments.length }} transactions</small>
-                            </div>
-                        </div>
-
-                    </div>
-
-                    <!-- Interactive Management Tabs & Search -->
-                    <div class="admin-toolbar">
-                        <div class="admin-tabs">
-                            <button
-                                type="button"
-                                class="admin-tab"
-                                :class="{ active: adminTab === 'games' }"
-                                @click="adminTab = 'games'; adminSearch = ''"
-                            >
-                                Games ({{ adminGames.length }})
-                            </button>
-                            <button
-                                type="button"
-                                class="admin-tab"
-                                :class="{ active: adminTab === 'users' }"
-                                @click="adminTab = 'users'; adminSearch = ''"
-                            >
-                                Users ({{ users.length }})
-                            </button>
-                            <button
-                                type="button"
-                                class="admin-tab"
-                                :class="{ active: adminTab === 'developers' }"
-                                @click="adminTab = 'developers'; adminSearch = ''"
-                            >
-                                Developers ({{ developers.length }})
-                            </button>
-                        </div>
-
-                        <input
-                            v-model="adminSearch"
-                            type="text"
-                            class="admin-search"
-                            :placeholder="`Search ${adminTab}...`"
-                        />
-                    </div>
-
-                    <!-- Tab 1: All Games Management -->
-                    <div v-if="adminTab === 'games'">
-                        <div v-if="filteredAdminGames.length" class="table-responsive">
-                            <table class="profile-table">
-                                <thead>
-                                    <tr>
-                                        <th>ID</th>
-                                        <th>Game</th>
-                                        <th>Developer</th>
-                                        <th>Genre</th>
-                                        <th>Price</th>
-                                        <th>Rating</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr v-for="game in filteredAdminGames" :key="game.game_id">
-                                        <td class="id-cell">{{ game.game_id }}</td>
-                                        <td>
-                                            <div class="game-table-info">
-                                                <img
-                                                    v-if="game.img"
-                                                    :src="game.img"
-                                                    :alt="game.title"
-                                                />
-                                                <div v-else class="table-placeholder">🎮</div>
-                                                <router-link
-                                                    :to="gameLink(game)"
-                                                    class="text-white text-decoration-none"
-                                                    @click="openGame(game)"
-                                                >
-                                                    <strong>{{ game.title }}</strong>
-                                                </router-link>
-                                            </div>
-                                        </td>
-                                        <td>{{ resolveDevName(game) }}</td>
-                                        <td><span class="pill-tag">{{ game.genre }}</span></td>
-                                        <td>{{ price(game.price) }}</td>
-                                        <td class="rating-cell">★ {{ game.rating.toFixed(1) }}</td>
-                                        <td>
-                                            <div class="table-actions">
-                                                <router-link
-                                                    :to="`/games/edit/${game.game_id}`"
-                                                    class="edit-action"
-                                                >
-                                                    Edit
-                                                </router-link>
-                                                <button
-                                                    type="button"
-                                                    class="delete-action"
-                                                    @click="deleteGame(game.game_id)"
-                                                >
-                                                    Delete
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                        <p v-else class="empty-state">No games match your search.</p>
-                    </div>
-
-                    <!-- Tab 2: Users Directory -->
-                    <div v-else-if="adminTab === 'users'">
-                        <div v-if="filteredAdminUsers.length" class="table-responsive">
-                            <table class="profile-table">
-                                <thead>
-                                    <tr>
-                                        <th>User ID</th>
-                                        <th>Username</th>
-                                        <th>Email</th>
-                                        <th>Games Owned</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr v-for="u in filteredAdminUsers" :key="u.user_id">
-                                        <td class="id-cell">{{ u.user_id }}</td>
-                                        <td><strong>{{ u.username }}</strong></td>
-                                        <td>{{ u.email }}</td>
-                                        <td>{{ countUserGames(u.user_id) }}</td>
-                                        <td>
-                                            <button
-                                                type="button"
-                                                class="delete-action"
-                                                @click="deleteAccount('user', 'user_id', u.user_id, u.username)"
-                                            >
-                                                Remove
-                                            </button>
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                        <p v-else class="empty-state">No users match your search.</p>
-                    </div>
-
-                    <!-- Tab 3: Developers Directory -->
-                    <div v-else-if="adminTab === 'developers'">
-                        <div v-if="filteredAdminDevelopers.length" class="table-responsive">
-                            <table class="profile-table">
-                                <thead>
-                                    <tr>
-                                        <th>Developer ID</th>
-                                        <th>Studio / Username</th>
-                                        <th>Email</th>
-                                        <th>Published Games</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr v-for="d in filteredAdminDevelopers" :key="d.developer_id">
-                                        <td class="id-cell">{{ d.developer_id }}</td>
-                                        <td>
-                                            <strong>{{ d.username }}</strong>
-                                            <span
-                                                v-if="String(d.developer_id).toUpperCase() === 'D0000'"
-                                                class="admin-inline-badge"
-                                            >
-                                                ADMIN
-                                            </span>
-                                        </td>
-                                        <td>{{ d.email }}</td>
-                                        <td>{{ countDevGames(d) }}</td>
-                                        <td>
-                                            <button
-                                                v-if="String(d.developer_id).toUpperCase() !== 'D0000'"
-                                                type="button"
-                                                class="delete-action"
-                                                @click="deleteAccount('developer', 'developer_id', d.developer_id, d.username)"
-                                            >
-                                                Remove
-                                            </button>
-                                            <span v-else class="text-muted">Protected</span>
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                        <p v-else class="empty-state">No developers match your search.</p>
-                    </div>
-
-                </template>
-
-                <!-- Favourites shared by all roles -->
-                <section class="favourites-section">
+                <!-- Favourites (hidden when admin is logged in) -->
+                <section v-if="!isAdmin" class="favourites-section">
                     <div class="section-heading">
                         <div>
                             <span class="section-subtitle">SAVED WORLDS</span>
@@ -529,8 +280,6 @@ export default {
             developers: [],
             favourites: [],
             payments: [],
-            adminTab: 'games',
-            adminSearch: '',
             loading: false,
             err: ''
         };
@@ -603,50 +352,13 @@ export default {
             return this.games.filter((game) => paidIds.has(String(game.game_id)));
         },
         favouriteGames() {
-            const currentId = (this.isCreator || this.isAdmin) ? this.creatorId : this.userId;
+            const currentId = this.isCreator ? this.creatorId : this.userId;
             const favIds = new Set(
                 this.favourites
                     .filter((f) => String(f.user_id || '') === currentId)
                     .map((f) => String(f.game_id))
             );
             return this.games.filter((game) => favIds.has(String(game.game_id)));
-        },
-        adminGames() {
-            return this.games;
-        },
-        totalRevenue() {
-            return this.payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-        },
-        filteredAdminGames() {
-            const q = this.adminSearch.trim().toLowerCase();
-            if (!q) return this.adminGames;
-            return this.adminGames.filter(
-                (g) =>
-                    String(g.title || '').toLowerCase().includes(q) ||
-                    String(g.genre || '').toLowerCase().includes(q) ||
-                    String(g.game_id || '').toLowerCase().includes(q) ||
-                    this.resolveDevName(g).toLowerCase().includes(q)
-            );
-        },
-        filteredAdminUsers() {
-            const q = this.adminSearch.trim().toLowerCase();
-            if (!q) return this.users;
-            return this.users.filter(
-                (u) =>
-                    String(u.username || '').toLowerCase().includes(q) ||
-                    String(u.email || '').toLowerCase().includes(q) ||
-                    String(u.user_id || '').toLowerCase().includes(q)
-            );
-        },
-        filteredAdminDevelopers() {
-            const q = this.adminSearch.trim().toLowerCase();
-            if (!q) return this.developers;
-            return this.developers.filter(
-                (d) =>
-                    String(d.username || '').toLowerCase().includes(q) ||
-                    String(d.email || '').toLowerCase().includes(q) ||
-                    String(d.developer_id || '').toLowerCase().includes(q)
-            );
         }
     },
     mounted() {
@@ -683,28 +395,6 @@ export default {
         },
         openGame(game) {
             sessionStorage.setItem('selectedGame', JSON.stringify(game));
-        },
-        resolveDevName(game) {
-            const raw = String(game.developer_id || game.developer || '').trim();
-            if (!raw) return 'Unknown';
-            const found = this.developers.find(
-                (d) =>
-                    String(d.developer_id || '').trim().toLowerCase() === raw.toLowerCase() ||
-                    String(d.username || '').trim().toLowerCase() === raw.toLowerCase()
-            );
-            return found ? `${found.username} (${found.developer_id})` : raw;
-        },
-        countUserGames(uid) {
-            return this.payments.filter((p) => String(p.user_id) === String(uid)).length;
-        },
-        countDevGames(dev) {
-            const dId = String(dev.developer_id || '').trim().toLowerCase();
-            const dName = String(dev.username || '').trim().toLowerCase();
-            return this.games.filter((g) => {
-                const gDev = String(g.developer || '').trim().toLowerCase();
-                const gDevId = String(g.developer_id || '').trim().toLowerCase();
-                return gDev === dId || gDevId === dId || (dName && gDev === dName);
-            }).length;
         },
         fetchDashboardData() {
             const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
@@ -772,41 +462,6 @@ export default {
                 })
                 .catch((error) => {
                     alert('Error deleting game: ' + error.message);
-                });
-        },
-        deleteAccount(table, idCol, idVal, label) {
-            const confirmed = window.confirm(
-                `Remove ${label} (${idVal}) from Nexus?`
-            );
-            if (!confirmed) return;
-
-            const baseApi = `${import.meta.env.BASE_URL}resources/apis.php`;
-
-            fetch(`${baseApi}/${table}/${idCol}/${encodeURIComponent(idVal)}`, {
-                method: 'DELETE'
-            })
-                .then((res) => {
-                    if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
-                    return res.json();
-                })
-                .then((data) => {
-                    if (data.error) {
-                        alert('Failed to remove account: ' + data.error);
-                        return;
-                    }
-                    if (table === 'user') {
-                        this.users = this.users.filter((u) => String(u.user_id) !== String(idVal));
-                    } else {
-                        this.developers = this.developers.filter((d) => String(d.developer_id) !== String(idVal));
-                    }
-                    window.dispatchEvent(
-                        new CustomEvent('show-toast', {
-                            detail: { message: `${label} removed.`, type: 'info' }
-                        })
-                    );
-                })
-                .catch((error) => {
-                    alert('Error removing account: ' + error.message);
                 });
         }
     }
@@ -1032,105 +687,6 @@ export default {
     filter: brightness(1.1);
 }
 
-/* Admin KPI Cards */
-.admin-stat-card {
-    height: 100%;
-    padding: 24px;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    transition: border-color 0.2s, transform 0.2s;
-}
-
-.admin-stat-card:hover {
-    border-color: var(--cyan);
-    transform: translateY(-2px);
-}
-
-.admin-stat-card.stat-highlight {
-    border-color: rgba(165, 143, 255, 0.45);
-    background: linear-gradient(145deg, rgba(165, 143, 255, 0.08), var(--panel));
-}
-
-.stat-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-
-.admin-stat-card span {
-    color: var(--muted);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-}
-
-.stat-icon {
-    font-size: 18px;
-}
-
-.admin-stat-card h3 {
-    font-size: 30px;
-    font-weight: 800;
-    margin: 12px 0 6px;
-}
-
-.admin-stat-card small {
-    color: var(--muted);
-    font-size: 12px;
-}
-
-/* Admin Toolbar & Tabs */
-.admin-toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 14px;
-    margin-bottom: 20px;
-}
-
-.admin-tabs {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.admin-tab {
-    padding: 10px 18px;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    color: var(--muted);
-    font-size: 12px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.admin-tab:hover {
-    color: #fff;
-    border-color: rgba(0, 242, 254, 0.45);
-}
-
-.admin-tab.active {
-    background: rgba(0, 242, 254, 0.12);
-    border-color: var(--cyan);
-    color: var(--cyan);
-}
-
-.admin-search {
-    min-width: 260px;
-    padding: 10px 14px;
-    background: #0c0e13;
-    border: 1px solid var(--line);
-    color: var(--text);
-    font-size: 12px;
-    outline: none;
-}
-
-.admin-search:focus {
-    border-color: var(--cyan);
-}
-
 .profile-table {
     width: 100%;
     border-collapse: collapse;
@@ -1156,37 +712,6 @@ export default {
 
 .profile-table tbody tr:hover {
     background: rgba(255, 255, 255, 0.02);
-}
-
-.id-cell {
-    color: var(--cyan);
-    font-family: monospace;
-    font-weight: 700;
-}
-
-.rating-cell {
-    color: var(--gold);
-}
-
-.pill-tag {
-    display: inline-block;
-    padding: 3px 8px;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    color: var(--cyan);
-    background: rgba(0, 242, 254, 0.08);
-    border: 1px solid rgba(0, 242, 254, 0.35);
-}
-
-.admin-inline-badge {
-    margin-left: 8px;
-    padding: 2px 6px;
-    font-size: 9px;
-    font-weight: 800;
-    letter-spacing: 0.12em;
-    color: #a58fff;
-    border: 1px solid #a58fff;
 }
 
 .game-table-info {
@@ -1292,10 +817,6 @@ export default {
     .section-heading {
         align-items: flex-start;
         flex-direction: column;
-    }
-
-    .admin-search {
-        width: 100%;
     }
 }
 </style>
